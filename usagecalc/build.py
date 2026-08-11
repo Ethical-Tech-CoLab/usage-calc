@@ -19,9 +19,19 @@ from .metrics import (CHANNELS, IDLE_CUTOFFS, active_time, counterfactual, daily
 from .project import dates, load_config, offered_models, outputs, siblings
 from .store import (NANO_PER_AIU, StoreError, load_events, open_snapshot,
                     pick_session, tok, turn_labels, usd)
+from .todos import summary as todo_summary
 
 SCHEMA = "copilot-usage/1"
 MARKER = "/*USAGE*/"
+
+# Bumped whenever the packaged template gains a panel that reads a NEW payload
+# key. Splice mode deliberately never touches a project's markup, which is what
+# lets a project keep its own styling - but it also means a template upgrade
+# reaches nobody, and a page that cannot render a panel looks exactly like a
+# page that has nothing to show. The version is compared on every build so a
+# stale page says so out loud instead.
+TEMPLATE_VERSION = 2
+VERSION_MARK = "usage-calc-template:"
 
 NOT_MEASURED = [
     ["Energy", "No joules are recorded anywhere in this data. The energy panel "
@@ -74,6 +84,11 @@ def build(root=None, db=None, session=None, cwd=None, config=None):
     union_s, blocks = busy_union(events)
     turns = _turns(events, labels)
     agents = _agents(events)
+    day_rows = daily(events, turns)
+    # Coverage is computed against the SAME local day rows the dashboard shows.
+    # Deriving a second set of day boundaries here would let the two disagree
+    # by a day at every evening edge and nothing would look wrong.
+    plan = todo_summary(sid, work_days={r["date"]: r["requests"] for r in day_rows})
 
     return {
         "schema": SCHEMA,
@@ -128,8 +143,9 @@ def build(root=None, db=None, session=None, cwd=None, config=None):
             "cutoffs": list(IDLE_CUTOFFS),
             "default_cutoff_s": 300,
             "person_note": PERSON_NOTE,
-            "rows": daily(events, turns),
+            "rows": day_rows,
         },
+        "plan": plan,
         "channels": channels,
         "models": group(events, "model", "model"),
         "initiators": group(events, "initiator", "initiator"),
@@ -231,10 +247,42 @@ def inject(path, data):
         return None
     with open(path, encoding="utf-8") as fh:
         html = fh.read()
+    _warn_if_stale(html, path)
     html = _splice(html, data, os.path.basename(path))
     with open(path, "w", encoding="utf-8", newline="\n") as fh:
         fh.write(html)
     return path
+
+
+def page_version(html):
+    """Which generation of the packaged template a page was made from.
+
+    A page written before versioning existed has no mark at all, which is
+    version 1 by definition rather than an error.
+    """
+    i = html.find(VERSION_MARK)
+    if i < 0:
+        return 1
+    digits = ""
+    for ch in html[i + len(VERSION_MARK):]:
+        if ch.isdigit():
+            digits += ch
+        else:
+            break
+    return int(digits) if digits else 1
+
+
+def _warn_if_stale(html, path):
+    v = page_version(html)
+    if v >= TEMPLATE_VERSION:
+        return
+    print("  NOTE: %s was built from template v%d; the installed template is v%d."
+          % (os.path.basename(path), v, TEMPLATE_VERSION))
+    print("        The numbers below are current. Panels added since v%d will not"
+          % v)
+    print("        appear until the new markup is carried across - `usage-calc")
+    print("        build --fresh` takes the packaged page, or diff the template")
+    print("        at: %s" % template_path())
 
 
 def _splice(html, data, name):

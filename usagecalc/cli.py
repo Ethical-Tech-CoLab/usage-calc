@@ -111,6 +111,75 @@ def cmd_build(args):
     return 0
 
 
+def cmd_plan(args):
+    from .metrics import daily
+    from .store import load_events, pick_session
+    from .todos import sessions_with_todos, summary as todo_summary
+    import shutil as _shutil
+
+    if args.all:
+        rows = sessions_with_todos()
+        if not rows:
+            print("no session on this machine has kept a todo list")
+            return 0
+        print("%-38s %6s  %s" % ("session", "todos", "last touched"))
+        for r in rows:
+            print("%-38s %6d  %s" % (r["session"], r["todos"], r["last"] or ""))
+        return 0
+
+    root = find_root(args.root)
+    cfg = load_config(root)
+    con, tmp = open_snapshot(args.db)
+    try:
+        sess = pick_session(con, cwd=args.cwd or root, session=args.session)
+        sid = sess["id"]
+        events = load_events(con, sid)
+    finally:
+        con.close()
+        _shutil.rmtree(tmp, ignore_errors=True)
+
+    day_rows = daily(events, _turnless(events))
+    work = {r["date"]: r["requests"] for r in day_rows}
+    s = todo_summary(sid, work_days=work)
+    if not s:
+        print("session %s kept no todo list" % sid)
+        return 0
+    if args.json:
+        print(json.dumps(s, indent=2))
+        return 0
+
+    print("session %s" % sid)
+    print("  %d todos, %d dependency edges over %d of them"
+          % (s["total"], s["deps"]["edges"], s["deps"]["todos"]))
+    print("  by status: " + ", ".join("%s %d" % (k, v)
+                                      for k, v in s["by_status"].items() if v))
+    lt = s["lifetime"]
+    if lt["median_s"] is not None:
+        print("  time open: median %.0f s, max %.0f s - over the %d rows where it "
+              "is measurable" % (lt["median_s"], lt["max_s"], lt["measurable"]))
+    print("  %d rows were never observed in progress, so their duration is "
+          "missing, not zero" % lt["same_second"])
+    c = s.get("coverage")
+    if c:
+        print()
+        print("  planning covered %d of %d working days" %
+              (c["planned_days"], c["work_days"]))
+        print("  %s of billed requests (%d of %d) happened on a day with a plan"
+              % (("%.0f%%" % c["pct"]) if c["pct"] is not None else "n/a",
+                 c["requests_planned"], c["requests_total"]))
+        if c["unplanned_days"]:
+            print("  no plan written on: " + ", ".join(c["unplanned_days"]))
+    print()
+    print("  completion rate is not reported: a session closes its list as it")
+    print("  goes, so the rate measures tidying and reads 100% for everyone.")
+    return 0
+
+
+def _turnless(events):
+    """daily() needs turn starts only to count them; plan output ignores that."""
+    return []
+
+
 def cmd_export(args):
     return _run_tool("export_session.py", args.rest)
 
@@ -201,6 +270,16 @@ def main(argv=None):
     p.add_argument("--root")
     p.add_argument("--page")
     p.set_defaults(fn=cmd_verify)
+
+    p = sub.add_parser("plan", help="how much of the billed work was planned")
+    p.add_argument("--root")
+    p.add_argument("--db", default=None)
+    p.add_argument("--session")
+    p.add_argument("--cwd")
+    p.add_argument("--all", action="store_true",
+                   help="list every session on this machine that kept a list")
+    p.add_argument("--json", action="store_true")
+    p.set_defaults(fn=cmd_plan)
 
     args = ap.parse_args(argv)
     if getattr(args, "db", None) is None and hasattr(args, "db"):

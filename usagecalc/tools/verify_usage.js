@@ -278,10 +278,71 @@ function resolve(arg) {
         scopeProblems.push('merged view still says "this store"');
     }
 
+    // --- the plan card ------------------------------------------------------
+    // The panel that must NOT be trusted just because it rendered. Three things
+    // can go wrong quietly: it can show a completion rate (the metric that reads
+    // 100% for everyone), it can leak todo text into a published page, and it
+    // can disagree with the day table it is joined to.
+    const plan = await page.evaluate(() => {
+      // DATA is a top-level const in a classic script: script-scoped, NOT a
+      // property of window. `window.DATA` returns undefined and this check then
+      // reports "no todo list, card correctly hidden" - a PASSING message from a
+      // blind test. It was caught only because the card was visible at the time
+      // and the contradiction fired. Had the card been hidden it would have
+      // agreed with itself forever.
+      const D = (typeof DATA !== 'undefined') ? DATA : null;
+      const c = document.getElementById('plancard');
+      if (!D || !D.plan) return { absent: true, card: !!c, shown: c ? !c.hidden : false };
+      if (!c) return { missingCard: true };
+      const txt = c.textContent;
+      const rows = [...c.querySelectorAll('tbody tr')];
+      const written = rows.reduce((a, tr) => {
+        const v = tr.children[3].textContent.replace(/[^0-9]/g, '');
+        return a + (v ? +v : 0);
+      }, 0);
+      return {
+        shown: !c.hidden,
+        stats: c.querySelectorAll('.stat').length,
+        rows: rows.length,
+        writtenSum: written,
+        srcTotal: D.plan.total,
+        srcDayRows: D.days.rows.length,
+        unplannedRows: rows.filter(tr => /none written/.test(tr.children[3].textContent)).length,
+        srcUnplanned: D.plan.coverage ? D.plan.coverage.unplanned_days.length : 0,
+        saysNoRate: /completion rate is deliberately absent/i.test(txt),
+        // A percentage that is exactly 100 is the shape of the metric this
+        // panel exists to refuse. Flag it wherever it appears here.
+        hasHundredPct: /\b100(\.0)?%/.test(txt),
+        subsetStated: /where it is measurable/i.test(txt),
+      };
+    });
+
+    const planProblems = [];
+    if (plan.missingCard)
+      planProblems.push('payload carries plan data but the page has no plan card');
+    if (plan.absent && plan.shown)
+      planProblems.push('no plan data, yet the card is visible');
+    if (!plan.absent && !plan.missingCard) {
+      if (!plan.shown) planProblems.push('plan data present but the card is hidden');
+      if (plan.rows !== plan.srcDayRows)
+        planProblems.push(`plan table ${plan.rows} rows != ${plan.srcDayRows} day rows`);
+      if (plan.writtenSum !== plan.srcTotal)
+        planProblems.push(`todos in table ${plan.writtenSum} != ${plan.srcTotal} recorded`);
+      if (plan.unplannedRows !== plan.srcUnplanned)
+        planProblems.push(`${plan.unplannedRows} unplanned rows shown != ${plan.srcUnplanned}`);
+      if (!plan.saysNoRate)
+        planProblems.push('the card does not state that completion rate is withheld');
+      if (plan.hasHundredPct)
+        planProblems.push('a 100% figure appears - that is the metric this card refuses');
+      if (!plan.subsetStated)
+        planProblems.push('time-open is shown without saying it covers a subset');
+    }
+
     const ok = errs.length === 0 && pageErrs.length === 0 && bad.length === 0 &&
                r.empty.length === 0 && r.nan.length === 0 && r.leaked.length === 0 &&
                r.hasWithdrawn && r.theme === theme && dayProblems.length === 0 &&
-               fleetProblems.length === 0 && scopeProblems.length === 0;
+               fleetProblems.length === 0 && scopeProblems.length === 0 &&
+               planProblems.length === 0;
     if (!ok) fail++;
     console.log(`--- ${theme} --- ${ok ? 'PASS' : 'FAIL'}`);
     console.log(`  theme=${r.theme} bg=${r.bg} font=${r.font}`);
@@ -307,6 +368,12 @@ function resolve(arg) {
       console.log(`  scope: local ${scope.self.req} req/${scope.self.turns} turns, ` +
                   `merged ${scope.all.req} req/${scope.all.turns} turns`);
     if (scopeProblems.length) console.log('  SCOPE ' + scopeProblems.join(' | '));
+    if (!plan.absent && !plan.missingCard)
+      console.log(`  plan: ${plan.rows} day rows, ${plan.writtenSum} todos, ` +
+                  `${plan.unplannedRows} unplanned days, rate-withheld=${plan.saysNoRate}`);
+    else if (plan.absent)
+      console.log('  plan: no todo list for this session (card correctly hidden)');
+    if (planProblems.length) console.log('  PLAN ' + planProblems.join(' | '));
     if (errs.length) console.log('  ERR ' + errs.slice(0, 4).join(' | '));
     if (pageErrs.length) console.log('  PAGEERR ' + pageErrs.slice(0, 4).join(' | '));
     await ctx.close();

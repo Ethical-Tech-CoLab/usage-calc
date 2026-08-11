@@ -259,6 +259,73 @@ which reads the first line of each user message for the "what was asked" list on
 your own dashboard. It is never exported. Set `"turn_labels": false` in
 `usage-calc.json` to switch it off entirely.
 
+**Todo titles are treated the same way.** The plan panel below reads the
+session's own todo list, which is prose a person wrote about unreleased work.
+`todos.summary()` returns counts, dates and ratios only; `todos.titles()` exists
+for a terminal you are sitting at and is never called by the payload builder. A
+test asserts the published summary contains no todo text.
+
+---
+
+## Was any of it planned?
+
+The CLI keeps a second SQLite file per session, next to the billing store:
+
+```
+~/.copilot/session-state/<session-id>/session.db
+```
+
+That is where the working todo list lives. It is keyed by the same session id
+the billing store uses, so the two join — and the join is the only reason it is
+worth reading. On its own the list says nothing. Against the money it says
+where spending happened with no plan behind it:
+
+```bash
+usage-calc plan              # this project
+usage-calc plan --all        # every session on this machine that kept a list
+```
+
+```
+  153 todos, 77 dependency edges over 47 of them
+  planning covered 7 of 10 working days
+  91% of billed requests (4539 of 4968) happened on a day with a plan
+  no plan written on: 2026-08-07, 2026-08-09, 2026-08-10
+```
+
+### There is no completion rate, on purpose
+
+The obvious number is "153 of 153 done, 100 %". It is worthless. It reads 100 %
+because of how a list is *used*, not how the work went: a session closes items
+as it goes, so nothing abandoned is left sitting there marked `pending` to pull
+the number down. It was closed, or it was never written. **The rate measures
+tidying.** A metric that reads 100 % for everybody, forever, distinguishes
+nothing, and shipping it would have been worse than shipping nothing.
+
+Coverage is reported instead, and it is weighted by **requests, not days** — a
+single unplanned day carrying a third of the spend should not be one-tenth of
+the finding.
+
+### Half the timing data is missing and the panel says so
+
+`updated_at` defaults to `created_at`, so a todo inserted and closed without an
+intervening status change carries a zero-second lifetime. That means *never
+observed in progress*, not *done instantly*. In the reference session it is 119
+of 153 rows. Lifetimes are therefore reported over the measurable subset with
+its size stated alongside. Averaging the untouched rows in would have halved the
+median and the number would have been a fiction.
+
+### Template versions
+
+`build` splices new numbers into an existing page and never touches its markup —
+that is what lets a project keep its own styling. It also means **a panel added
+to the template reaches nobody**, and a page that cannot render a panel looks
+exactly like a page with nothing to show. So the template carries a version, and
+a build against an older page says so:
+
+```
+NOTE: usage-dashboard.html was built from template v1; the installed template is v2.
+```
+
 ---
 
 ## Command reference
@@ -268,6 +335,7 @@ your own dashboard. It is never exported. Set `"turn_labels": false` in
 | `usage-calc init` | Write a `usage-calc.json` into the current project |
 | `usage-calc sessions` | List what the local store holds, with request counts |
 | `usage-calc build` | Generate the JSON payload and the dashboard |
+| `usage-calc plan` | How much of the billed work happened on a day with a plan |
 | `usage-calc export` | Export this machine's usage for another machine to merge |
 | `usage-calc query` | What has this machine been doing lately, across all projects |
 | `usage-calc report` | Print merged contributions without building a page |
@@ -308,6 +376,13 @@ Written in the same spirit as the dashboard's own wrong-list.
    both is an assumption, and probably a false one.
 8. **Volume is not value.** Nothing here measures whether any of the output was
    worth having.
+9. **Plan coverage measures whether a plan was WRITTEN, not whether it was
+   followed.** A day with forty todos and no relation between them and the work
+   scores identically to a day that was genuinely planned. It is a floor on
+   deliberateness, not a measure of it.
+10. **A todo list is a partial record of intent at best.** Short sessions, and
+    work done in one obvious sweep, legitimately have no list. A low coverage
+    figure is a question to ask, not a verdict.
 
 ---
 

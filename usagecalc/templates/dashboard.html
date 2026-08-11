@@ -1,4 +1,5 @@
 <!doctype html>
+<!--usage-calc-template:2-->
 <html lang="en">
 <head>
 <meta charset="utf-8">
@@ -408,6 +409,14 @@ h3 { font-size: 1rem; margin: 22px 0 6px; }
     <div class="note" id="daynote"></div>
   </div>
 
+  <div class="card" id="plancard" hidden>
+    <h2>How much of this was planned</h2>
+    <p class="sub" id="plansub"></p>
+    <div class="stats" id="planhero"></div>
+    <div class="scroll" style="margin-top:20px"><table id="planTable"></table></div>
+    <div class="note" id="plannote"></div>
+  </div>
+
   <div class="card">
     <h2>The rest of the project</h2>
     <p class="sub" id="fleetsub"></p>
@@ -558,6 +567,75 @@ function dayLabel(iso) {
 // The merge rule worth remembering: MONEY IS ADDITIVE AND A PERSON IS NOT.
 // Cost and tokens are summed. Model wall time is a union, and engaged time is
 // a union of sittings, because one person cannot be at two keyboards at once.
+// The plan card reports COVERAGE, not completion. The completion rate for a
+// working todo list is always about 100% - a session closes items as it goes,
+// so nothing abandoned is left sitting there to pull the number down. A metric
+// that reads 100% for everybody measures nothing, so it is not shown at all.
+function renderPlan() {
+  const P = DATA.plan, card = $("plancard");
+  if (!card) return;
+  if (!P) return;                      // this session kept no list; say nothing
+  card.hidden = false;
+
+  const c = P.coverage, lt = P.lifetime;
+  $("plansub").innerHTML =
+    `The session kept its own todo list &mdash; <b>${n0(P.total)}</b> items with ` +
+    `<b>${n0(P.deps.edges)}</b> dependency edges across ${n0(P.deps.todos)} of them. ` +
+    `What follows is how much of the <em>billed</em> work happened on a day that ` +
+    `had a plan written for it.`;
+
+  const stats = [];
+  if (c) {
+    stats.push([pct(c.requests_planned, c.requests_total), "of spend was planned",
+                n0(c.requests_planned) + " of " + n0(c.requests_total) + " requests"]);
+    stats.push([c.planned_days + " / " + c.work_days, "days with a plan",
+                c.unplanned_days.length
+                  ? c.unplanned_days.length + " working days had none"
+                  : "every working day had one"]);
+  }
+  stats.push([n0(P.total), "items tracked",
+              n0(P.deps.edges) + " dependencies declared"]);
+  stats.push([lt.median_s == null ? "n/a" : n0(Math.round(lt.median_s / 60)) + " min",
+              "median time open",
+              "over the " + n0(lt.measurable) + " items where it is measurable"]);
+  $("planhero").innerHTML = stats
+    .map(([b, s, e]) => `<div class="stat"><b>${b}</b><span>${s}</span><em>${e}</em></div>`)
+    .join("");
+
+  // Join the plan to the money, day by day. A day with spend and no plan is the
+  // whole point of the table, so those rows are labelled rather than omitted.
+  const written = {};
+  P.days.forEach(d => { written[d.day] = d.written; });
+  const rows = DATA.days.rows.map(r => ({
+    date: dayLabel(r.date),
+    requests: n0(r.requests),
+    cost: usd(r.usd),
+    planned: written[r.date] ? n0(written[r.date]) : "\u2014 none written"
+  }));
+  table($("planTable"), [
+    {key: "date", label: "Day"},
+    {key: "requests", label: "Requests", num: true},
+    {key: "cost", label: "Cost", num: true},
+    {key: "planned", label: "Todos written", num: true}
+  ], rows);
+
+  $("plannote").innerHTML =
+    `<b>Completion rate is deliberately absent.</b> Every item on this list is ` +
+    `closed, and it would be on almost any list read this way: work that was ` +
+    `abandoned was closed or never written down, so the rate measures tidying ` +
+    `rather than delivery. ` +
+    `<b>Time-open is reported over a subset.</b> ${n0(lt.same_second)} of ` +
+    `${n0(P.total)} items were never observed in an in-progress state, so their ` +
+    `duration is missing data rather than a zero. Averaging them in would have ` +
+    `halved the median and the figure would have been a fiction. ` +
+    (c && c.unplanned_days.length
+      ? `<b>The unplanned days are the finding</b>, not a defect: ` +
+        `${c.unplanned_days.join(", ")} carried ` +
+        `${n0(c.requests_total - c.requests_planned)} billed requests with no plan ` +
+        `written. That is where unplanned spend hides.`
+      : ``);
+}
+
 function renderFleet() {
   const F = DATA.fleet, S = DATA.siblings;
   const sub = $("fleetsub"), tab = $("fleetTable"), note = $("fleetnote");
@@ -1099,6 +1177,7 @@ function render() {
 
   // --- day by day ---------------------------------------------------------
   renderDays();
+  renderPlan();
   renderFleet();
 
   // --- turns --------------------------------------------------------------
