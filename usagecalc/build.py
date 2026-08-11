@@ -1,4 +1,4 @@
-﻿"""Assemble the whole payload, and write it into the template.
+"""Assemble the whole payload, and write it into the template.
 
 This is the top of the package: it reads the store, derives everything, and
 returns one JSON-serialisable dict. The dashboard is that dict plus a template
@@ -37,7 +37,7 @@ MARKER = "/*USAGE*/"
 # into it for a stylesheet. It was rejected because it makes the module the
 # judge of whether a consumer's page is worth improving. The note says what
 # changed; the consumer decides whether to take it.
-TEMPLATE_VERSION = 4
+TEMPLATE_VERSION = 5
 VERSION_MARK = "usage-calc-template:"
 
 NOT_MEASURED = [

@@ -1,5 +1,5 @@
 <!doctype html>
-<!--usage-calc-template:4-->
+<!--usage-calc-template:5-->
 <html lang="en">
 <head>
 <meta charset="utf-8">
@@ -163,6 +163,7 @@ blockquote.wrong {
 .daykey select { font: inherit; font-size: 0.82rem; padding: 3px 7px;
   border-radius: 6px; border: 1px solid var(--cp-border);
   background: var(--cp-surface); color: var(--cp-text); }
+.heroscope { margin: 0 0 14px; }
 .split { display: grid; grid-template-columns: 1fr 1fr; gap: 22px; }
 @media (max-width: 780px) { .split { grid-template-columns: 1fr; } .bar { grid-template-columns: minmax(90px,130px) 1fr auto; } }
 .dual { margin-top: 8px; }
@@ -309,7 +310,13 @@ h3 { font-size: 1rem; margin: 22px 0 6px; }
     <div class="crumb" id="crumb"></div>
     <h1>What this investigation cost</h1>
     <p class="sub" id="lede"></p>
+    <div class="daykey heroscope">
+      <label>Repository
+        <select id="heroScope" class="repoScope" data-need="usage"></select>
+      </label>
+    </div>
     <div class="stats" id="hero"></div>
+    <div class="note" id="heroscopenote" hidden></div>
   </div>
 </header>
 
@@ -383,7 +390,13 @@ h3 { font-size: 1rem; margin: 22px 0 6px; }
     <h2>The cache is doing most of the work</h2>
     <p class="sub">Same traffic, same models, every cached token repriced at its model's
       full input rate.</p>
+    <div class="daykey">
+      <label>Repository
+        <select id="cfScope" class="repoScope" data-need="usage"></select>
+      </label>
+    </div>
     <div class="stats" id="cfStats"></div>
+    <div class="note" id="cfnote" hidden></div>
     <div class="note"><strong>What this is not.</strong> It is not a saving anyone banked.
       Without a cache the agent would have been driven differently &mdash; smaller context,
       fewer re-reads, more summarising &mdash; so the uncached column prices a workload that
@@ -703,6 +716,76 @@ function repaintScopes() {
   document.querySelectorAll(".repoScope").forEach(s => { s.value = SCOPE; });
   SCOPE_PAINTERS.forEach(fn => fn());
 }
+// What one selection actually spent. Everything a cost panel needs, in one
+// shape, so "all repositories" and "one repository" are read the same way and
+// cannot drift apart.
+//
+// NULL MEANS NOT MEASURED AND NEVER MEANS ZERO. Three of these columns exist
+// for the primary repository alone: words come from a working tree, and only
+// the repository this page was generated in has one; user-initiated requests
+// come from an initiator field the exporter does not carry, so a contribution
+// cannot say which of its requests a person started. Every panel below prints
+// "not measured" for a null and none of them substitutes the primary's figure.
+function usageFor(key) {
+  const d = DATA, F = d.fleet, e = SC ? scopeOf(key) : null;
+  if (!F) {
+    // One machine, no merge: the page is the primary repository and the
+    // selector was removed at mount, so there is only one answer to give.
+    const tk = d.totals.tokens;
+    return {label: d.project.repository || d.project.name, primary: true,
+            usd: d.totals.usd, requests: d.totals.requests,
+            turns: d.totals.turns, models: d.totals.models,
+            premium: d.totals.premium_requests,
+            tokens: tk.input + tk.cache_read + tk.cache_write + tk.output,
+            cache_read: tk.cache_read,
+            model_s: d.time.inference_union_s, wall_s: d.time.wall_span_s,
+            commits: d.outputs.commit_count, insertions: d.outputs.insertions,
+            words: d.outputs.markdown_words,
+            docs: d.outputs.files_by_ext[".md"],
+            cf: d.counterfactual, subagents: d.totals.subagents};
+  }
+  if (key === "all") {
+    const cr = (F.channels || []).find(c => c.type === "cache_read");
+    return {label: "all " + F.totals.projects + " repositories", primary: false,
+            usd: F.totals.usd, requests: F.totals.requests,
+            turns: F.totals.turns, models: F.totals.models,
+            premium: null,
+            tokens: F.totals.tokens, cache_read: cr ? cr.tokens : null,
+            model_s: F.time.model_wall_s, wall_s: F.time.span_s,
+            commits: e ? e.commits : null, insertions: null,
+            words: null, docs: null,
+            cf: F.counterfactual,
+            subagents: F.totals.subagent_requests};
+  }
+  const s = (F.sources || []).find(x => x.project === key);
+  if (!s) {
+    // Named as a sibling but it never exported anything. It still belongs in
+    // the selector - leaving it out would make the list agree with the totals
+    // and disagree with the project - so it answers with what GitHub knows.
+    return {label: key, primary: false, usd: null, requests: null,
+            turns: null, models: null, premium: null, tokens: null,
+            cache_read: null, model_s: null, wall_s: null,
+            commits: e ? e.commits : null, insertions: null, words: null,
+            docs: null, cf: null, subagents: null, noUsage: true};
+  }
+  const p = !!s.primary;
+  const cr = s.by_channel && s.by_channel.cache_read;
+  return {
+    label: key, primary: p,
+    usd: s.usd, requests: s.requests, turns: s.turns,
+    models: (s.models || []).length,
+    premium: p ? d.totals.premium_requests : null,
+    tokens: s.tokens, cache_read: cr ? cr.tokens : null,
+    model_s: s.model_s,
+    wall_s: (Date.parse(s.last) - Date.parse(s.first)) / 1000,
+    commits: e ? e.commits : null,
+    insertions: p ? d.outputs.insertions : null,
+    words: p ? d.outputs.markdown_words : null,
+    docs: p ? d.outputs.files_by_ext[".md"] : null,
+    cf: s.counterfactual, subagents: s.subagent_requests
+  };
+}
+
 // Day rows for one selection. Merged rows come from the fleet; a single
 // repository's come from its own contribution, which is why contrib.py keeps
 // them. They do not sum to the merged rows and the panel says why.
@@ -1065,13 +1148,68 @@ function renderBand() {
   const allTokens = tk.input + tk.cache_read + tk.cache_write + tk.output;
   const active = (T.active || []).find(a => a.cutoff_s === 300) ||
                  (T.active || [])[0] || null;
-  // Dates are shown as plain calendar days in the zone the work happened in.
+  // Dates are shown as plain calendar days in the zone the work happened in,
+  // in the one format the whole page uses: 10-August-2026. "Aug 10, 2026" is
+  // locale-bound and "10/8" is ambiguous between two continents.
   // A reader asking "is this current" is asking about the published work, so
   // last-updated is the last COMMIT where one exists, not the last request -
   // a session can burn requests without publishing a line.
   const D = d.dates || {};
-  const day = fmtDate;   // ONE format on the page - see fmtDate
+  const MONTHS = ["January", "February", "March", "April", "May", "June",
+                  "July", "August", "September", "October", "November",
+                  "December"];
+  const day = iso => {
+    if (!iso) return "\u2014";
+    const p = String(iso).slice(0, 10).split("-").map(Number);
+    return p[2] + "-" + MONTHS[p[1] - 1] + "-" + p[0];
+  };
   const updated = D.last_commit || D.last_request;
+
+  // A DATE IS NOT A HEADLINE. Every other tile in this band leads with a
+  // quantity and explains it underneath; these two led with a fourteen-
+  // character string, which had to be set at half the size of its neighbours
+  // to fit and so read as the least important thing in the row.
+  //
+  // They are now a matched pair: the day the work started, and how far from
+  // it the last publication sits. A reader should not have to subtract two
+  // dates in their head to learn the answer the band exists to give.
+  //
+  // THE FULL DATE IS NOT DROPPED, IT MOVES DOWN. "Aug 1st" on its own is
+  // unreadable on a page opened in 2028, so the canonical 1-August-2026 sits
+  // in the sub-line of both tiles - which also keeps the whole page in one
+  // date format.
+  const ORD = n => {
+    const t = n % 100;
+    if (t >= 11 && t <= 13) return n + "th";
+    return n + (["th", "st", "nd", "rd"][n % 10] || "th");
+  };
+  const shortDay = iso => {
+    if (!iso) return "\u2014";
+    const p = String(iso).slice(0, 10).split("-").map(Number);
+    return MONTHS[p[1] - 1].slice(0, 3) + " " + ORD(p[2]);
+  };
+  // T+N COUNTS DAYS SPANNED, NOT DAYS ELAPSED, and the difference is not
+  // pedantry: 1 to 11 August is ten days elapsed and eleven days spanned, so
+  // the same pair of dates supports two different headline numbers. The
+  // spanned count is used because it is the one already published beside it -
+  // the tile to its left reads "10 of 11 days were active", which is what
+  // tells a reader which convention T+ follows without a sentence spent on it.
+  const spanDays = (a, b) => {
+    if (!a || !b) return null;
+    const x = String(a).slice(0, 10).split("-").map(Number);
+    const y = String(b).slice(0, 10).split("-").map(Number);
+    return Math.round((Date.UTC(y[0], y[1] - 1, y[2]) -
+                       Date.UTC(x[0], x[1] - 1, x[2])) / 86400000) + 1;
+  };
+  const span = D.calendar_days || spanDays(D.started, updated);
+
+  // WHOLE DOLLARS IN THE BAND ONLY. Cents are meaningless at a glance - the
+  // reader is being told the order of magnitude of a bill, not reconciling it -
+  // and ".12" on a four-figure number is two characters of noise in the widest
+  // headline in the row. Every place the number is used as EVIDENCE still
+  // carries cents: the tables, the per-model rows, the unit rates. This is
+  // rounded for display and nothing is recomputed from it.
+  const usd0 = x => (x > 0 && x < 0.5) ? "<$1" : "$" + n0(x);
 
   // WHEN THE LABEL SAYS FIVE REPOSITORIES, THE NUMBER BESIDE IT MUST COVER
   // FIVE REPOSITORIES. Merged usage makes the headline figures project-wide;
@@ -1079,8 +1217,7 @@ function renderBand() {
   // floor. Getting this pairing wrong would understate the project by more
   // than half while looking authoritative.
   const F = d.fleet;
-  const bigUsd = F ? F.totals.usd : t.usd;
-  const bigReq = F ? F.totals.requests : t.requests;
+  const bigUsd = F ? F.totals.usd : t.usd;  const bigReq = F ? F.totals.requests : t.requests;
   const bigTurns = F ? F.totals.turns : t.turns;
   const bigTok = F ? F.totals.tokens : allTokens;
   const bigHrs = F ? F.time.times[String(F.time.default_cutoff_s)].engaged_s / 3600
@@ -1091,17 +1228,27 @@ function renderBand() {
   const bigModels = F
     ? new Set([].concat(...F.sources.map(s => s.models || []))).size
     : t.models;
+  // Commits across every repository named in the project, which is what the
+  // scope list already computes - it reaches GitHub for the ones that are not
+  // checked out here. Falls back to this repository's own count when there is
+  // no scope list to ask.
+  const allScope = (typeof SC !== "undefined" && SC)
+    ? SC.entries.find(e => e.kind === "all") : null;
+  const bigCommits = allScope && allScope.commits != null
+    ? allScope.commits : d.outputs.commit_count;
 
   $("igbig").innerHTML = [
-    [day(D.started), "research started",
-     D.active_days ? D.active_days + " active days over " + D.calendar_days + " calendar days"
-                   : "first request issued", "dt"],
-    [day(updated), "last updated",
-     D.last_commit ? "most recent commit" : "most recent model request", "dt"],
-    [usd(bigUsd), "total metered cost",
+    [shortDay(D.started), "research started",
+     day(D.started) + (D.active_days
+        ? " \u00b7 " + D.active_days + " of " + D.calendar_days + " days were active"
+        : " \u00b7 first request issued"), "dt"],
+    [span ? "T+" + n0(span) : "\u2014", "last updated",
+     day(updated) + " \u00b7 " +
+     (D.last_commit ? "most recent commit" : "most recent model request"), "dt"],
+    [usd0(bigUsd), "total metered cost",
      (F
         ? "across " + n0(F.totals.projects) + " repositories, " +
-          usd(t.usd) + " of it here"
+          usd0(t.usd) + " of it here"
         : (d.siblings && d.siblings.rows.length
              ? "a floor: " + n0(d.siblings.rows.length) + " sibling repos unmeasured"
              : n0(Math.round(t.aiu)) + " AI credits, at published rates"))],
@@ -1114,17 +1261,35 @@ function renderBand() {
        : (active ? "over " + n1(T.wall_span_s / 3600) + " h of calendar"
                  : "not computed")],
     [n0(Math.round(bigTok / 1e6)) + "M", "tokens billed",
-     F ? n0(Math.round(allTokens / 1e6)) + "M of them in " + MAIN
+     F ? n0(Math.round(allTokens / 1e6)) + "M of them in this repository"
        : pct(tk.cache_read, allTokens) + " of them re-read from cache"],
+    // COMMITS ARE POOLED AND WORDS ARE NOT, and the tile has to say so. It
+    // used to print this repository's commit count beside a row of pooled
+    // headlines, so the band read 55 commits while the cards below it read
+    // 147 for the same selection. Commits are known for every repository
+    // because they come from GitHub rather than from a checkout; words are
+    // counted from a working tree, and only one of the five is checked out
+    // here, so the count is named rather than quietly generalised.
     [n0(d.outputs.markdown_words), "words published",
-     n0(d.outputs.commit_count) + " commits"]
+     bigCommits == null ? "commits not counted"
+       : n0(bigCommits) + " commits" +
+         (F ? " \u00b7 words counted in 1 of " + n0(F.totals.projects) +
+              " repositories" : "")]
   ].map(([b, s, e, k]) =>
     `<div><b class="${k || ""}">${esc(b)}</b><span>${esc(s)}</span><em>${esc(e)}</em></div>`
   ).join("");
 
   // Models, biggest first, measured by spend rather than by request count -
   // requests are not equal in size and ranking by them flatters the cheap one.
-  const ms = d.models.slice().sort((a, b) => b.usd - a.usd);
+  //
+  // POOLED, BECAUSE THE TILES ABOVE ARE POOLED. This row used to read the
+  // primary repository's split while the tile directly above it counted models
+  // across all five, so the row summed to $675 under a headline of $1,559 and
+  // showed four models beside a tile saying five. Both panels now answer the
+  // same question about the same repositories.
+  const ms = (F && F.models ? F.models : d.models)
+    .slice().sort((a, b) => b.usd - a.usd);
+  const msReq = F ? F.totals.requests : t.requests;
   const top = ms.length ? ms[0].usd : 1;
   $("igmodels").innerHTML = ms.map(m => `
     <div class="igm">
@@ -1135,24 +1300,39 @@ function renderBand() {
 
   // The delegation identity. Asserted from the data rather than typed, and it
   // says nothing at all if the identity does not hold.
+  //
+  // Sub-agent counts are the one thing here that does NOT pool cleanly: a
+  // contribution records which of its requests ran inside a sub-agent but not
+  // which model or which agent, so the identity below can only be tested on
+  // the repository whose agents are named. It is therefore tested on the
+  // primary and stated as such; the pooled count is reported beside it.
   const subReq = (d.agents || []).reduce((s, a) => s + a.requests, 0);
+  // The page defines MAIN; the band must not depend on that having happened.
+  const bandMain = (typeof SC !== "undefined" && SC)
+    ? SC.main : (d.project.repository || d.project.name);
+  const fleetSub = F && F.totals.subagent_requests != null
+    ? F.totals.subagent_requests : subReq;
   const subModels = [...new Set((d.agents || []).flatMap(a => a.models || []))];
-  const delegated = ms.filter(m => subModels.includes(m.model));
+  const pModels = d.models.slice().sort((a, b) => b.usd - a.usd);
+  const delegated = pModels.filter(m => subModels.includes(m.model));
   const exact = subModels.length === 1 && delegated.length === 1 &&
                 delegated[0].requests === subReq && subReq > 0;
   $("igmodelfind").innerHTML = exact
-    ? `<b>The model split is exactly the delegation boundary.</b> All
-       ${n0(subReq)} <code>${esc(subModels[0])}</code> requests are sub-agent
-       requests &mdash; it never ran on the main thread, and the main model
-       never ran inside a sub-agent. The second model is not a second opinion;
-       it is ${d.totals.subagents} delegated searches.`
-    : `${n0(subReq)} of ${n0(t.requests)} requests ran inside
-       ${d.totals.subagents} sub-agents.`;
+    ? `<b>The model split is exactly the delegation boundary.</b> In
+       <code>${esc(bandMain)}</code> all ${n0(subReq)}
+       <code>${esc(subModels[0])}</code> requests are sub-agent requests
+       &mdash; it never ran on the main thread, and the main model never ran
+       inside a sub-agent. The second model is not a second opinion; it is
+       ${d.totals.subagents} delegated searches.`
+    : `${n0(fleetSub)} of ${n0(msReq)} requests ran inside sub-agents.`;
 
-  // Money by channel, pooled across models. Cache read is the cheapest token
-  // there is and still the largest line, which is the whole point.
+  // Money by channel, pooled across models AND across repositories. Cache read
+  // is the cheapest token there is and still the largest line, which is the
+  // whole point. A contribution states no per-request price, so its split
+  // comes from the aggregate its exporter wrote; the merge checks that the
+  // four channels add up to the fleet's own bill before any of this renders.
   const byType = {};
-  (d.channels || []).forEach(c => {
+  ((F && F.channels) ? F.channels : (d.channels || [])).forEach(c => {
     byType[c.type] = (byType[c.type] || 0) + c.usd;
   });
   const LABEL = {
@@ -1178,37 +1358,105 @@ function renderBand() {
     `<span><i style="background:${COLOR[k] || "var(--cp-accent)"}"></i>${esc(LABEL[k] || k)} &mdash; ${usd(v)}</span>`
   ).join("");
 
-  const cf = d.counterfactual || {};
+  // Pooled counterfactual and pooled output share, so this sentence describes
+  // the same bar it sits under. The output share is read from the same channel
+  // rows the bar is drawn from rather than from the primary token totals,
+  // which is what kept it consistent when the bar went project-wide.
+  const cf = (F && F.counterfactual) ? F.counterfactual : (d.counterfactual || {});
+  const chTok = {};
+  ((F && F.channels) ? F.channels : (d.channels || [])).forEach(c => {
+    chTok[c.type] = (chTok[c.type] || 0) + c.tokens;
+  });
+  const chAll = Object.values(chTok).reduce((s, v) => s + v, 0) || allTokens;
+  const wrote = pct(chTok.output || tk.output, chAll);
   $("igmoneyfind").innerHTML = cf.uncached_usd
     ? `<b>Most of the bill is re-reading.</b> An agent's context is resent on
        every request, so the same words are paid for again and again. Caching
        held that to ${usd(cf.actual_usd)}; without it the identical work would
        have listed at <b>${usd(cf.uncached_usd)}</b>, or
        ${cf.ratio.toFixed(1)}&times; more. What the model actually wrote is
-       ${pct(tk.output, allTokens)} of the tokens.`
-    : `What the model actually wrote is ${pct(tk.output, allTokens)} of the
-       tokens billed.`;
+       ${wrote} of the tokens.`
+    : `What the model actually wrote is ${wrote} of the tokens billed.`;
 }
 //IGBAND-END
 function render() {
   const d = DATA, t = d.totals, T = d.time;
 
-  $("lede").textContent =
-    `Every request this project sent to a model, priced from the client's own ` +
-    `per-request log. ${n0(t.requests)} requests across ${n0(t.turns)} turns, ` +
-    `${t.models} models and ${t.subagents} sub-agents, on ` +
-    `${d.project.repository || d.project.name}.`;
-
   const tk = t.tokens;
   const allTokens = tk.input + tk.cache_read + tk.cache_write + tk.output;
-  $("hero").innerHTML = [
-    [usd(t.usd), "list-price cost", "at published token rates"],
-    [n0(t.requests), "model requests", n0(t.premium_requests) + " of them user-initiated"],
-    [n0(Math.round(allTokens/1e6)) + "M", "tokens billed", pct(tk.cache_read, allTokens) + " served from cache"],
-    [n2(T.inference_union_s/3600) + " h", "model busy time", "against " + n1(T.wall_span_s/3600) + " h of wall clock"],
-    [n0(d.outputs.commit_count), "commits", n0(d.outputs.insertions) + " lines added"],
-    [n0(d.outputs.markdown_words), "words published", "across " + d.outputs.files_by_ext[".md"] + " documents"]
-  ].map(([b,s,e]) => `<div class="stat"><b>${b}</b><span>${s}</span><em>${e}</em></div>`).join("");
+
+  // THE HERO ROW AND THE BAND ABOVE IT MUST ANSWER THE SAME QUESTION. This row
+  // used to be fixed to the primary repository while the band counted all
+  // five, so a reader met $1,559 above the fold and $675 two inches below it
+  // under a heading saying what the investigation cost. Both are true and the
+  // page never said which was which. It now follows the same selector as the
+  // rest of the page and defaults, like the band, to every repository.
+  const NM = "not measured";
+  // A sub-line sits UNDER a number and reads as a comment on it. When the
+  // headline figure is present and only the sub-line's quantity is missing,
+  // a bare "not measured" denies the number above it - the card read
+  // "8,767 MODEL REQUESTS / not measured". Name the thing that is absent.
+  const nmOf = what => what + ": not measured";
+  function paintHero() {
+    const key = SC ? SCOPE : null;
+    const u = usageFor(key);
+    const one = SC && scopeOf() && scopeOf().kind !== "all";
+
+    $("lede").textContent = u.noUsage
+      ? `${u.label} is part of this project but never exported its usage, so ` +
+        `nothing below it can be priced. What is known about it comes from ` +
+        `GitHub rather than from a request log.`
+      : `Every request ${one ? "" : "this project "}sent to a model, priced ` +
+        `from the client's own per-request log. ${n0(u.requests)} requests ` +
+        `across ${n0(u.turns)} turns and ${u.models} ` +
+        `${u.models === 1 ? "model" : "models"}, on ${u.label}.`;
+
+    const cache = (u.cache_read != null && u.tokens)
+      ? pct(u.cache_read, u.tokens) + " served from cache" : nmOf("cache share");
+    $("hero").innerHTML = [
+      [u.usd == null ? "\u2014" : usd(u.usd), "list-price cost",
+       u.usd == null ? NM : "at published token rates"],
+      [u.requests == null ? "\u2014" : n0(u.requests), "model requests",
+       u.premium == null ? nmOf("user-initiated")
+         : n0(u.premium) + " of them user-initiated"],
+      [u.tokens == null ? "\u2014" : n0(Math.round(u.tokens / 1e6)) + "M",
+       "tokens billed", cache],
+      [u.model_s == null ? "\u2014" : n2(u.model_s / 3600) + " h",
+       "model busy time",
+       u.wall_s == null ? nmOf("wall clock")
+         : "against " + n1(u.wall_s / 3600) + " h of wall clock"],
+      [u.commits == null ? "\u2014" : n0(u.commits), "commits",
+       u.insertions == null ? nmOf("lines added")
+         : n0(u.insertions) + " lines added"],
+      [u.words == null ? "\u2014" : n0(u.words), "words published",
+       u.docs == null ? nmOf("documents") : "across " + u.docs + " documents"]
+    ].map(([b, s, e]) =>
+      `<div class="stat"><b>${b}</b><span>${s}</span><em>${e}</em></div>`
+    ).join("");
+
+    const note = $("heroscopenote");
+    if (note) {
+      // Named rather than implied. Three of these six columns can only ever be
+      // the primary repository's, and a reader who has just switched away from
+      // it is owed the reason the cards went blank.
+      const blanks = [];
+      if (u.words == null) blanks.push("words and documents");
+      if (u.insertions == null) blanks.push("lines changed");
+      if (u.premium == null) blanks.push("which requests a person started");
+      if (!blanks.length) { note.hidden = true; note.innerHTML = ""; return; }
+      note.hidden = false;
+      note.innerHTML =
+        `<strong>Three columns are ${esc(NM)} for this selection.</strong> ` +
+        esc(blanks.join(", ")) + ` &mdash; words and lines are counted from a ` +
+        `working tree and only <strong>${esc(MAIN)}</strong> has one here, ` +
+        `and a usage export carries no initiator, so a contributed repository ` +
+        `cannot say which of its requests a person began. They are shown as ` +
+        `${esc(NM)} rather than as zero, and no other repository's figure has ` +
+        `been put under this label.`;
+    }
+  }
+  paintHero();
+  SCOPE_PAINTERS.push(paintHero);
 
   renderBand();
   $("whyusd").textContent = usd(t.usd) + " (" + n0(Math.round(t.aiu)) + " AI credits)";
@@ -1306,13 +1554,46 @@ function render() {
   }
 
   // --- counterfactual ------------------------------------------------------
-  const cf = d.counterfactual;
-  $("cfStats").innerHTML = [
-    [usd(cf.actual_usd), "as billed", "with the prompt cache"],
-    [usd(cf.uncached_usd), "repriced", "every cached token at full input rate"],
-    [n1(cf.ratio) + "x", "difference", "the cache is the dominant cost lever here"],
-    [usd(cf.uncached_usd - cf.actual_usd), "difference", "in list-price terms"]
-  ].map(([b,s,e]) => `<div class="stat"><b>${b}</b><span>${s}</span><em>${e}</em></div>`).join("");
+  // Scope-aware for the same reason the hero row is: the band above now prints
+  // a pooled ratio, and a card printing the primary repository's ratio beside
+  // it would read as a contradiction rather than as two scopes.
+  function paintCf() {
+    const u = usageFor(SC ? SCOPE : null), cf = u.cf, note = $("cfnote");
+    if (!cf || cf.ratio == null) {
+      $("cfStats").innerHTML =
+        `<div class="stat"><b>\u2014</b><span>not measured</span>` +
+        `<em>${esc(u.label)} exported no request log to reprice</em></div>`;
+      if (note) { note.hidden = true; note.innerHTML = ""; }
+      return;
+    }
+    $("cfStats").innerHTML = [
+      [usd(cf.actual_usd), "as billed", "with the prompt cache"],
+      [usd(cf.uncached_usd), "repriced", "every cached token at full input rate"],
+      [n1(cf.ratio) + "x", "difference", "the cache is the dominant cost lever here"],
+      [usd(cf.uncached_usd - cf.actual_usd), "difference", "in list-price terms"]
+    ].map(([b, s, e]) =>
+      `<div class="stat"><b>${b}</b><span>${s}</span><em>${e}</em></div>`
+    ).join("");
+
+    // A model this machine never ran has no observed input price, so its
+    // tokens cannot be repriced. They are charged at what they actually cost,
+    // which makes the repriced column a FLOOR by that much - small here, but
+    // it is the kind of omission that would never announce itself.
+    const miss = cf.models_without_an_input_price_sample || [];
+    if (!note) return;
+    if (!miss.length) { note.hidden = true; note.innerHTML = ""; return; }
+    note.hidden = false;
+    note.innerHTML =
+      `<strong>The repriced figure is a floor.</strong> ` +
+      miss.map(m => `<code>${esc(m)}</code>`).join(", ") +
+      ` never ran on the machine this page was generated on, so there is no ` +
+      `observed input price for ${miss.length === 1 ? "it" : "them"} and ` +
+      `${miss.length === 1 ? "its" : "their"} tokens are carried at what they ` +
+      `actually cost rather than repriced. Guessing a rate would have moved a ` +
+      `published number using a figure that is not in this data.`;
+  }
+  paintCf();
+  SCOPE_PAINTERS.push(paintCf);
 
   // --- time ---------------------------------------------------------------
   table($("timeTable"), [

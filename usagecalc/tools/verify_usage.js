@@ -261,6 +261,7 @@ function resolve(arg) {
       const out = {
         nsel: sels.length,
         needs: sels.map(e => e.dataset.need),
+        known: [...new Set(S.entries.flatMap(e => Object.keys(e)))],
         offered: sels.map(e => [...e.options].map(o => o.value).join(',')),
         want: S.entries.map(e => e.key).join(','),
         mainKey: main ? main.key : null,
@@ -286,8 +287,20 @@ function resolve(arg) {
         if (o !== scope.want)
           scopeProblems.push(`selector ${k} offers ${o} not ${scope.want}`);
       });
-      if (new Set(scope.needs).size !== scope.needs.length)
-        scopeProblems.push('two selectors declare the same capability');
+      if (scope.needs.some(n => !n))
+        scopeProblems.push('a selector does not declare which capability it needs');
+      // NOT uniqueness. Several panels legitimately need the same capability -
+      // the hero, the counterfactual and the day chart all need "usage" - and
+      // asserting one selector per capability only ever described how many
+      // panels happened to exist when the check was written. What matters is
+      // that a declared capability is one the scope entries actually carry,
+      // because a selector needing a field nobody publishes can never hide.
+      // The list is read FROM the payload so it cannot go stale here.
+      scope.needs.forEach((n, k) => {
+        if (n && !scope.known.includes(n))
+          scopeProblems.push(`selector ${k} needs "${n}", which no scope entry declares ` +
+                             `(entries carry: ${scope.known.join(', ')})`);
+      });
       if (scope.all.req !== scope.wantAllReq)
         scopeProblems.push(`merged ${scope.all.req} req != fleet ${scope.wantAllReq}`);
       // The turn bug this check exists for reported one turn per REQUEST.
@@ -326,6 +339,139 @@ function resolve(arg) {
         if (!scope.sib.outSub.includes(scope.sibKey))
           scopeProblems.push('outputs caption does not name the selected repository');
       }
+    }
+
+    // --- the cost panels answer the question their heading asks -----------------
+    // The failure this exists for shipped: the "at a glance" band showed all five
+    // repositories, and the cost panels two inches below it showed ONE. Both were
+    // arithmetically correct and the page contradicted itself, because a panel
+    // that reads a primary-only field looks exactly like a panel that reads a
+    // pooled one - same shape, same units, plausible numbers, no error anywhere.
+    //
+    // So the assertions are about WHICH POPULATION a number covers, which is not
+    // observable from the number itself. They are: the fleet splits reconcile to
+    // the fleet bill; the per-repository cards sum to the "all" card; the band
+    // does not move when the selector does; and nothing reads as unmeasured that
+    // the selection can in fact measure.
+    const cost = await page.evaluate(async () => {
+      const D = (typeof DATA !== 'undefined') ? DATA : null;
+      if (!D || !D.fleet || !D.scopes) return { absent: true };
+      const F = D.fleet, keys = D.scopes.entries.map(e => e.key);
+      const sum = (rows, f) => rows.reduce((a, r) => a + f(r), 0);
+      const hero = document.getElementById('heroScope');
+      const band = document.getElementById('igmoneylg');
+      const read = async v => {
+        if (!hero) return null;
+        hero.value = v; hero.dispatchEvent(new Event('change'));
+        await new Promise(r => setTimeout(r, 80));
+        const s = [...document.querySelectorAll('#hero .stat b')].map(b => b.textContent.trim());
+        return {
+          usd: /^\$/.test(s[0] || '') ? +s[0].replace(/[^0-9.]/g, '') : null,
+          req: /\d/.test(s[1] || '') ? +s[1].replace(/[^0-9]/g, '') : null,
+          raw: s,
+          band: band ? band.innerText : null,
+        };
+      };
+      const per = {};
+      for (const k of keys) if (k !== 'all') per[k] = await read(k);
+      const all = await read('all');
+      await read('all');
+      return {
+        bill: F.totals.usd,
+        byModel: F.models ? sum(F.models, r => r.usd) : null,
+        byChannel: F.channels ? sum(F.channels, r => r.usd) : null,
+        srcSum: sum(F.sources, r => r.usd),
+        bandMoney: band
+          ? (band.innerText.match(/\$[\d,]+\.\d\d/g) || [])
+              .reduce((a, s) => a + +s.replace(/[^0-9.]/g, ''), 0) || null
+          : null,
+        bandModels: (() => {
+          const el = document.getElementById('igmodels');
+          if (!el) return null;
+          const v = [...el.querySelectorAll('.igm .v')]
+            .map(n => (n.textContent.match(/\$[\d,]+\.\d\d/) || [])[0])
+            .filter(Boolean)
+            .map(s => +s.replace(/[^0-9.]/g, ''));
+          return v.length ? v.reduce((a, b) => a + b, 0) : null;
+        })(),
+        all, per,
+        contradictions: [...document.querySelectorAll('#hero .stat')]
+          .filter(s => {
+            const b = (s.querySelector('b') || {}).textContent || '';
+            const e = (s.querySelector('em') || {}).textContent || '';
+            return b.trim() !== '\u2014' && /^not measured$/i.test(e.trim());
+          })
+          .map(s => (s.querySelector('span') || {}).textContent),
+        usable: keys.filter(k => k !== 'all' &&
+          (D.scopes.entries.find(e => e.key === k) || {}).usage),
+      };
+    });
+
+    const costProblems = [];
+    if (!cost.absent) {
+      // A split that does not add up to the bill is a split of some OTHER
+      // population - which is exactly the bug, seen from the inside.
+      if (cost.byModel !== null && Math.abs(cost.byModel - cost.bill) > 0.02)
+        costProblems.push(`models sum $${cost.byModel.toFixed(2)} != fleet $${cost.bill.toFixed(2)}`);
+      if (cost.byChannel !== null && Math.abs(cost.byChannel - cost.bill) > 0.02)
+        costProblems.push(`channels sum $${cost.byChannel.toFixed(2)} != fleet $${cost.bill.toFixed(2)}`);
+      if (Math.abs(cost.srcSum - cost.bill) > 0.02)
+        costProblems.push(`sources sum $${cost.srcSum.toFixed(2)} != fleet $${cost.bill.toFixed(2)}`);
+
+      if (cost.all && cost.all.usd !== null) {
+        // The parts must be the whole. A hero still reading one repository under
+        // "all" passes every single-scope check and fails only this one.
+        const parts = cost.usable.map(k => (cost.per[k] || {}).usd).filter(v => v !== null);
+        const partSum = parts.reduce((a, b) => a + b, 0);
+        if (parts.length !== cost.usable.length)
+          costProblems.push('a repository with usage reports no cost in the hero');
+        else if (Math.abs(partSum - cost.all.usd) > 0.05)
+          costProblems.push(`hero parts $${partSum.toFixed(2)} != hero all $${cost.all.usd.toFixed(2)}`);
+        if (Math.abs(cost.all.usd - cost.bill) > 0.05)
+          costProblems.push(`hero all $${cost.all.usd} != fleet $${cost.bill.toFixed(2)}`);
+        const reqs = cost.usable.map(k => (cost.per[k] || {}).req).filter(v => v !== null);
+        if (reqs.length === cost.usable.length && cost.all.req !== null &&
+            reqs.reduce((a, b) => a + b, 0) !== cost.all.req)
+          costProblems.push('hero request cards do not sum to the merged card');
+      }
+
+      // The band answers "what did this project cost". The shipped bug put a
+      // PRIMARY-ONLY figure under that heading, two inches below a pooled one.
+      //
+      // Note what is NOT asserted here: that the band stays put when the
+      // selector moves. The band renders once at load, so that assertion can
+      // never fail and would be decoration. What can fail - and did ship - is
+      // the band's own arithmetic covering the wrong population, so the money
+      // it reports is read back off the page and compared to the fleet bill.
+      if (cost.bandMoney !== null) {
+        if (Math.abs(cost.bandMoney - cost.bill) > 0.05)
+          costProblems.push(`band money $${cost.bandMoney.toFixed(2)} != fleet ` +
+                            `$${cost.bill.toFixed(2)} - the band is scoped to ` +
+                            'something narrower than its heading claims');
+      }
+      // The band has TWO panels reading a split, and they fail independently:
+      // reverting the models panel alone leaves the money total correct, so the
+      // money assertion above cannot see it. One check per panel, because a
+      // check that happens to catch a neighbour's bug is luck, not coverage.
+      if (cost.bandModels !== null && Math.abs(cost.bandModels - cost.bill) > 0.05)
+        costProblems.push(`band models $${cost.bandModels.toFixed(2)} != fleet ` +
+                          `$${cost.bill.toFixed(2)} - the model panel covers a ` +
+                          'narrower population than the band it sits in');
+
+      // "not measured" is a real answer; a dash where a figure exists is not.
+      for (const k of cost.usable) {
+        const p = cost.per[k];
+        if (p && (p.usd === null || p.req === null))
+          costProblems.push(`${k} has usage but the hero shows no figure for it`);
+      }
+
+      // A sub-line reading exactly "not measured" under a number that IS
+      // measured denies the number above it - the card read "8,767 MODEL
+      // REQUESTS / not measured", where the missing quantity was a different
+      // one entirely. Every harness passed; only the picture showed it.
+      if (cost.contradictions && cost.contradictions.length)
+        costProblems.push(`bare "not measured" under a measured figure: ` +
+                          cost.contradictions.join(', '));
     }
 
     // --- one date format ------------------------------------------------------
@@ -421,6 +567,7 @@ function resolve(arg) {
                r.empty.length === 0 && r.nan.length === 0 && r.leaked.length === 0 &&
                r.hasWithdrawn && r.theme === theme && dayProblems.length === 0 &&
                fleetProblems.length === 0 && scopeProblems.length === 0 &&
+               costProblems.length === 0 &&
                dateProblems.length === 0 &&
                planProblems.length === 0;
     if (!ok) fail++;
@@ -450,6 +597,12 @@ function resolve(arg) {
                   (scope.main ? `, ${scope.mainKey}=${scope.main.req} req` : '') +
                   (scope.sib ? `, ${scope.sibKey}=${scope.sib.req} req` : ''));
     if (scopeProblems.length) console.log('  SCOPE ' + scopeProblems.join(' | '));
+    if (!cost.absent)
+      console.log(`  cost: fleet $${cost.bill.toFixed(2)}, ` +
+                  `models $${(cost.byModel || 0).toFixed(2)}, ` +
+                  `channels $${(cost.byChannel || 0).toFixed(2)}, ` +
+                  `${cost.usable.length} repositories with usage`);
+    if (costProblems.length) console.log('  COST ' + costProblems.join(' | '));
     console.log(`  dates: ${dates.good} canonical, 0 legacy formats`);
     if (dateProblems.length) console.log('  DATES ' + dateProblems.join(' | '));
     if (!plan.absent && !plan.missingCard)

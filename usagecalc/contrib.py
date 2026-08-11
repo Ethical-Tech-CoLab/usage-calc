@@ -37,7 +37,7 @@ import json
 import os
 
 from .intervals import busy_intervals, intersect, merge, sitting_intervals, span
-from .metrics import CHANNELS, IDLE_CUTOFFS, daily, merged_turns
+from .metrics import CHANNELS, IDLE_CUTOFFS, daily, group, merged_turns
 from .store import StoreError, tok, usd
 
 FORMAT = "usage-calc-contribution"
@@ -121,6 +121,128 @@ def _events_of(c, name):
     return events
 
 
+def _source_channels(source):
+    """One source's spend split by billing channel, pooled across its models.
+
+    THE SPLIT COMES FROM WHATEVER THE SOURCE ITSELF STATES, and the two kinds of
+    source state it differently. The primary is read live from the store, so
+    every request carries its own per-channel cost and the split is summed from
+    the rows. A contribution carries per-request TOKENS but not per-request
+    cost - the exporter drops the price, because a price table is the one thing
+    that can go stale between machines - so its split is taken from the
+    file-level aggregate the exporter wrote alongside it.
+
+    Both are exact. The aggregate is checked against the source's own stated
+    total here, so a file whose split does not add up to its own bill is
+    refused rather than merged into a page that would still look reasonable.
+    """
+    out = {k: {"tokens": 0, "nano_aiu": 0} for k in CHANNELS}
+    stated = sum(e["nano"] for e in source["events"])
+
+    agg = source.get("channel_totals")
+    if agg is None:
+        for e in source["events"]:
+            for kind, ch in e["chans"].items():
+                if "nano_aiu" not in ch:
+                    raise StoreError(
+                        "%s: a request row carries no per-channel cost and the "
+                        "source states no channel totals either, so its money "
+                        "cannot be split by channel"
+                        % source["label"])
+                out[kind]["tokens"] += ch["tokens"]
+                out[kind]["nano_aiu"] += ch["nano_aiu"]
+    else:
+        for row in agg:
+            k = row["type"]
+            if k not in out:
+                raise StoreError("%s: unknown billing channel %r"
+                                 % (source["label"], k))
+            out[k]["tokens"] += row["tokens"]
+            out[k]["nano_aiu"] += row["nano_aiu"]
+
+    got = sum(v["nano_aiu"] for v in out.values())
+    if got != stated:
+        raise StoreError(
+            "%s: its channel split comes to %d nano-AIU but its requests sum "
+            "to %d. Refusing to merge a split that does not add up to its own "
+            "bill." % (source["label"], got, stated))
+    return out
+
+
+def _price_table(events):
+    """What each model charges per token on each channel, as observed.
+
+    Only the primary's rows carry prices, so this is learned there and applied
+    to everything. It is not a published rate card and must not be treated as
+    one: a model that never ran on this machine has no entry, and a model whose
+    price changed mid-project would be recorded at whichever rate its rows
+    state. `_check_prices` proves the table against every source before any
+    figure derived from it is published.
+    """
+    price = {}
+    for e in events:
+        for kind, ch in e["chans"].items():
+            if "price_nano_per_token" in ch:
+                price[(e["model"], kind)] = ch["price_nano_per_token"]
+    return price
+
+
+def _by_model_channel(events):
+    """tokens by (model, channel) and total cost by model, from request rows."""
+    toks, nano = {}, {}
+    for e in events:
+        nano[e["model"]] = nano.get(e["model"], 0) + e["nano"]
+        for k in CHANNELS:
+            n = tok(e, k)
+            if n:
+                toks[(e["model"], k)] = toks.get((e["model"], k), 0) + n
+    return toks, nano
+
+
+def _fleet_counterfactual(sources, price):
+    """What the pooled traffic would have cost with no prompt cache.
+
+    Same price counterfactual as the single-machine one - every cached token
+    charged at its model's full input price, output untouched - but it has to
+    cross machines, and a contribution states no prices. So the primary's
+    observed table is applied to the other machines' token counts, and the
+    application is PROVED before it is used: for every model whose channels are
+    all priced, the table must reproduce that model's stated cost on that
+    source exactly. A model the table cannot price is not guessed at and not
+    dropped either; it is charged at what it actually cost, which makes the
+    result a LOWER bound for that sliver, and it is named in the payload.
+    """
+    real = naive = 0
+    unpriced = set()
+    for s in sources:
+        toks, nano = _by_model_channel(s["events"])
+        for model, actual in nano.items():
+            used = [k for k in CHANNELS if toks.get((model, k))]
+            if any((model, k) not in price for k in used):
+                unpriced.add(model)
+                real += actual
+                naive += actual          # no uplift: a floor, never a guess
+                continue
+            recon = sum(toks[(model, k)] * price[(model, k)] for k in used)
+            if recon != actual:
+                raise StoreError(
+                    "%s: repricing %s from the primary's observed rates gives "
+                    "%d nano-AIU against a stated %d. The price table does not "
+                    "describe this source, so no counterfactual is published "
+                    "for it." % (s["label"], model, recon, actual))
+            real += actual
+            p_in = price[(model, "input")]
+            for k in used:
+                naive += (toks[(model, k)] * price[(model, k)] if k == "output"
+                          else toks[(model, k)] * p_in)
+    return {
+        "actual_usd": round(usd(real), 2),
+        "uncached_usd": round(usd(naive), 2),
+        "ratio": round(naive / real, 3) if real else None,
+        "models_without_an_input_price_sample": sorted(unpriced),
+    }
+
+
 def fleet(primary_label, primary_meta, primary_events, contribs):
     """Everything spent on a project, across every machine that worked on it.
 
@@ -132,7 +254,8 @@ def fleet(primary_label, primary_meta, primary_events, contribs):
         return None
 
     sources = [{"label": primary_label, "meta": primary_meta,
-                "events": primary_events, "primary": True}]
+                "events": primary_events, "primary": True,
+                "channel_totals": None}]
     for c in contribs:
         sources.append({
             "label": c["meta"].get("project") or c["file"],
@@ -142,9 +265,15 @@ def fleet(primary_label, primary_meta, primary_events, contribs):
                      "file": c["file"]},
             "events": c["events"],
             "primary": False,
+            # Per-request rows in a contribution carry tokens but no cost, so
+            # the channel split has to come from the aggregate the exporter
+            # wrote. A file predating that field states None and is refused by
+            # _source_channels rather than merged with a channel split missing.
+            "channel_totals": c["meta"].get("channels"),
         })
 
     rows, all_events, all_busy = [], [], []
+    price = _price_table(primary_events)
     for s in sources:
         evs = s["events"]
         busy = busy_intervals(evs)
@@ -165,6 +294,12 @@ def fleet(primary_label, primary_meta, primary_events, contribs):
             "days": len({dt.datetime.fromtimestamp(e["ts"]).astimezone().date()
                          for e in evs}),
             "models": sorted({e["model"] for e in evs}),
+            # This source's own money split, by model and by billing channel,
+            # so a reader who picks one repository gets that repository's split
+            # rather than the pooled one under its name.
+            "by_model": group(evs, "model", "model"),
+            "by_channel": _source_channels(s),
+            "counterfactual": _fleet_counterfactual([s], price),
             # Day rows for THIS repository alone, so the page can offer a
             # per-repository scope instead of only all-or-primary.
             #
@@ -203,6 +338,34 @@ def fleet(primary_label, primary_meta, primary_events, contribs):
         }
 
     total_nano = sum(r["nano_aiu"] for r in rows)
+
+    # The money split pooled across every machine. Channels are additive in the
+    # way the module docstring means - a token bought on one machine and a
+    # token bought on another are two tokens - so unlike time these simply sum.
+    # The sum is checked against the fleet total, which is what proves no
+    # source's split was dropped or double-counted.
+    chan = {k: {"type": k, "tokens": 0, "nano_aiu": 0} for k in CHANNELS}
+    for r in rows:
+        for k, v in r["by_channel"].items():
+            chan[k]["tokens"] += v["tokens"]
+            chan[k]["nano_aiu"] += v["nano_aiu"]
+    channels = [c for c in chan.values() if c["tokens"] or c["nano_aiu"]]
+    for c in channels:
+        c["usd"] = round(usd(c["nano_aiu"]), 4)
+    got = sum(c["nano_aiu"] for c in channels)
+    if got != total_nano:
+        raise StoreError(
+            "the merged channel split comes to %d nano-AIU against a fleet "
+            "total of %d" % (got, total_nano))
+    channels.sort(key=lambda c: -c["nano_aiu"])
+
+    models = group(all_events, "model", "model")
+    got = sum(m["nano_aiu"] for m in models)
+    if got != total_nano:
+        raise StoreError(
+            "the merged model split comes to %d nano-AIU against a fleet "
+            "total of %d" % (got, total_nano))
+
     return {
         "sources": sorted(rows, key=lambda r: -r["nano_aiu"]),
         "totals": {
@@ -215,7 +378,12 @@ def fleet(primary_label, primary_meta, primary_events, contribs):
             "tokens": sum(r["tokens"] for r in rows),
             "days": len({dt.datetime.fromtimestamp(e["ts"]).astimezone().date()
                          for e in all_events}),
+            "subagent_requests": sum(r["subagent_requests"] for r in rows),
+            "models": len(models),
         },
+        "models": models,
+        "channels": channels,
+        "counterfactual": _fleet_counterfactual(sources, price),
         "time": {
             "model_work_s": round(model_work, 1),
             "model_wall_s": round(model_wall, 1),
