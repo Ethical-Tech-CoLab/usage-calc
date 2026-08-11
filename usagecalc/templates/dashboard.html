@@ -1,0 +1,1254 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Usage dashboard - what this investigation cost</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Cpath d='M2 24h28M6 24V8m20 16V8M6 10c5 6 15 6 20 0M6 24c5-8 15-8 20 0' fill='none' stroke='%23b11f4b' stroke-width='2'/%3E%3C/svg%3E">
+<script>
+  (() => {
+    const param = new URLSearchParams(window.location.search).get("scoutTheme");
+    const theme =
+      param || (window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light");
+    document.documentElement.setAttribute("data-theme", theme);
+  })();
+</script>
+<style>
+:root {
+  color-scheme: light;
+  --cp-bg: #f7f4ef;
+  --cp-bg-elevated: #fcfbf8;
+  --cp-surface: #ffffff;
+  --cp-surface-soft: #f5f5f5;
+  --cp-border: #dedede;
+  --cp-border-strong: #919191;
+  --cp-text: #242424;
+  --cp-text-muted: #5c5c5c;
+  --cp-text-soft: #6f6f6f;
+  --cp-accent: #b11f4b;
+  --cp-accent-hover: #9a1a41;
+  --cp-accent-soft: rgba(177, 31, 75, 0.08);
+  --cp-accent-fg: #ffffff;
+  --cp-success: #16a34a;
+  --cp-danger: #dc2626;
+  --cp-warning: #f59e0b;
+  --cp-link: #0078d4;
+  --cp-shadow: 0 18px 48px rgba(0, 0, 0, 0.12);
+  --cp-overlay: rgba(255, 255, 255, 0.8);
+  --cp-panel: rgba(255, 255, 255, 0.86);
+  --cp-panel-strong: rgba(255, 255, 255, 0.96);
+  --cp-sheen: rgba(255, 255, 255, 0.55);
+  --cp-highlight: rgba(177, 31, 75, 0.12);
+}
+html[data-theme="dark"] {
+  color-scheme: dark;
+  --cp-bg: #3d3b3a;
+  --cp-bg-elevated: #343231;
+  --cp-surface: #292929;
+  --cp-surface-soft: #2e2e2e;
+  --cp-border: #474747;
+  --cp-border-strong: #5f5f5f;
+  --cp-text: #dedede;
+  --cp-text-muted: #919191;
+  --cp-text-soft: #b0b0b0;
+  --cp-accent: #fd8ea1;
+  --cp-accent-hover: #fb7b91;
+  --cp-accent-soft: rgba(253, 142, 161, 0.14);
+  --cp-accent-fg: #1a1a1a;
+  --cp-success: #4ade80;
+  --cp-danger: #f87171;
+  --cp-warning: #fbbf24;
+  --cp-link: #4da6ff;
+  --cp-shadow: 0 18px 48px rgba(0, 0, 0, 0.32);
+  --cp-overlay: rgba(41, 41, 41, 0.88);
+  --cp-panel: rgba(41, 41, 41, 0.72);
+  --cp-panel-strong: rgba(41, 41, 41, 0.96);
+  --cp-sheen: rgba(255, 255, 255, 0.04);
+  --cp-highlight: rgba(253, 142, 161, 0.12);
+}
+* { box-sizing: border-box; }
+body {
+  margin: 0;
+  background: var(--cp-bg);
+  color: var(--cp-text);
+  font-family: "Segoe UI", Aptos, Calibri, -apple-system, BlinkMacSystemFont, sans-serif;
+  font-size: 16px;
+  line-height: 1.6;
+}
+code, .mono, th.num, td.num { font-family: Consolas, "Courier New", Courier, monospace; }
+.wrap { max-width: 1180px; margin: 0 auto; padding: 0 20px 90px; }
+header.top {
+  background: var(--cp-bg-elevated);
+  border-bottom: 1px solid var(--cp-border);
+  padding: 44px 0 34px;
+  margin-bottom: 30px;
+}
+header.top .wrap { padding-bottom: 0; }
+h1 { font-size: 2.1rem; line-height: 1.2; margin: 0 0 10px; letter-spacing: -0.02em; }
+h2 {
+  font-size: 1.35rem; margin: 0 0 4px; letter-spacing: -0.01em;
+}
+.sub { color: var(--cp-text-muted); margin: 0 0 6px; max-width: 74ch; }
+.crumb { font-size: 0.82rem; color: var(--cp-text-soft); margin-bottom: 14px; }
+.crumb a { color: var(--cp-link); text-decoration: none; }
+.crumb a:hover { text-decoration: underline; }
+.card {
+  background: var(--cp-surface);
+  border: 1px solid var(--cp-border);
+  border-radius: 16px;
+  padding: 24px 26px;
+  margin: 0 0 22px;
+  box-shadow: 0 0 2px rgba(0,0,0,0.12), 0 1px 2px rgba(0,0,0,0.14);
+}
+.card > h2 + .sub { margin-bottom: 18px; }
+.stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(158px, 1fr)); gap: 12px; margin-top: 22px; }
+.stat {
+  background: var(--cp-surface); border: 1px solid var(--cp-border);
+  border-radius: 0.625rem; padding: 14px 16px;
+}
+.stat b { display: block; font-size: 1.6rem; line-height: 1.15; letter-spacing: -0.02em; }
+.stat span { display: block; font-size: 0.76rem; color: var(--cp-text-muted); margin-top: 4px; text-transform: uppercase; letter-spacing: 0.05em; }
+.stat em { display: block; font-style: normal; font-size: 0.8rem; color: var(--cp-text-soft); margin-top: 6px; }
+table { width: 100%; border-collapse: collapse; font-size: 0.9rem; }
+.scroll { overflow-x: auto; }
+th, td { text-align: left; padding: 8px 12px; border-bottom: 1px solid var(--cp-border); vertical-align: top; }
+th { font-size: 0.74rem; text-transform: uppercase; letter-spacing: 0.05em; color: var(--cp-text-muted); font-weight: 600; }
+td.num, th.num { text-align: right; white-space: nowrap; }
+tr:last-child td { border-bottom: none; }
+tfoot td { font-weight: 700; border-top: 2px solid var(--cp-border-strong); }
+.note {
+  border-left: 3px solid var(--cp-accent); background: var(--cp-accent-soft);
+  padding: 12px 16px; border-radius: 0 0.625rem 0.625rem 0; margin: 18px 0 0;
+  font-size: 0.92rem;
+}
+.note strong { color: var(--cp-accent); }
+.warn { border-left-color: var(--cp-warning); background: var(--cp-surface-soft); }
+.warn strong { color: var(--cp-warning); }
+blockquote.wrong {
+  margin: 14px 0; padding: 12px 18px; border-left: 3px solid var(--cp-danger);
+  background: var(--cp-surface-soft); color: var(--cp-text-muted);
+  border-radius: 0 0.625rem 0.625rem 0; font-style: italic;
+}
+.withdrawn { color: var(--cp-danger); font-weight: 700; font-style: normal; }
+.bars { margin-top: 16px; }
+.bar { display: grid; grid-template-columns: minmax(120px, 190px) 1fr auto; gap: 12px; align-items: center; padding: 3px 0; font-size: 0.86rem; }
+.bar .lab { color: var(--cp-text-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.bar .track { background: var(--cp-surface-soft); border-radius: 4px; height: 15px; overflow: hidden; border: 1px solid var(--cp-border); }
+.bar .fill { display: block; height: 100%; background: var(--cp-accent); }
+.bar .val { font-family: Consolas, "Courier New", Courier, monospace; font-size: 0.82rem; color: var(--cp-text-muted); min-width: 74px; text-align: right; }
+/* -- day-by-day stacked bar ------------------------------------------------
+   Two segments inside one fill: the part of an engaged sitting a model spent
+   generating, and the remainder. The fill is made a flex container here rather
+   than by nesting another wrapper, because .bar .track already clips overflow
+   and a second wrapper would need its own height inherited through two levels.
+   The segments are <i> so they cannot inherit .fill's own accent background
+   and paint over each other when one of them rounds to zero width. */
+.bar .fill.stack { display: flex; background: none; }
+.bar .fill.stack i { display: block; height: 100%; }
+.daykey { display: flex; flex-wrap: wrap; gap: 16px; margin: 14px 0 2px;
+  font-size: 0.82rem; color: var(--cp-text-muted); align-items: center; }
+.daykey i { display: inline-block; width: 11px; height: 11px; border-radius: 3px;
+  margin-right: 6px; vertical-align: -1px; }
+.daykey select { font: inherit; font-size: 0.82rem; padding: 3px 7px;
+  border-radius: 6px; border: 1px solid var(--cp-border);
+  background: var(--cp-surface); color: var(--cp-text); }
+.split { display: grid; grid-template-columns: 1fr 1fr; gap: 22px; }
+@media (max-width: 780px) { .split { grid-template-columns: 1fr; } .bar { grid-template-columns: minmax(90px,130px) 1fr auto; } }
+.dual { margin-top: 8px; }
+.dual .row { margin-bottom: 14px; }
+.dual .cap { font-size: 0.78rem; text-transform: uppercase; letter-spacing: 0.05em; color: var(--cp-text-muted); margin-bottom: 5px; }
+.seg { display: flex; height: 30px; border-radius: 0.625rem; overflow: hidden; border: 1px solid var(--cp-border); }
+.seg div { display: flex; align-items: center; justify-content: center; font-size: 0.72rem; color: var(--cp-accent-fg); overflow: hidden; white-space: nowrap; }
+.legend { display: flex; flex-wrap: wrap; gap: 14px; margin-top: 10px; font-size: 0.8rem; color: var(--cp-text-muted); }
+.legend i { display: inline-block; width: 11px; height: 11px; border-radius: 3px; margin-right: 5px; vertical-align: -1px; }
+ul.tight { margin: 12px 0 0; padding-left: 20px; }
+ul.tight li { margin-bottom: 9px; }
+a { color: var(--cp-link); }
+.rating { display: inline-block; font-size: 0.7rem; font-weight: 700; letter-spacing: 0.05em; padding: 2px 8px; border-radius: 999px; border: 1px solid var(--cp-border-strong); color: var(--cp-text-muted); margin-left: 8px; vertical-align: 2px; }
+.locus { font-size: 0.86rem; color: var(--cp-text-muted); border-left: 2px solid var(--cp-border-strong); padding-left: 14px; margin: 12px 0; font-style: italic; }
+blockquote.loc {
+  margin: 14px 0; padding: 12px 18px; border-left: 3px solid var(--cp-border-strong);
+  background: var(--cp-surface-soft); border-radius: 0 0.625rem 0.625rem 0;
+  font-style: italic; font-size: 0.94rem;
+}
+blockquote.loc cite {
+  display: block; margin-top: 9px; font-style: normal; font-size: 0.8rem;
+  color: var(--cp-text-muted);
+}
+.rating.good { border-color: var(--cp-success); color: var(--cp-success); }
+p.pull {
+  font-size: 1.12rem; line-height: 1.5; font-weight: 600; color: var(--cp-accent);
+  border-left: 3px solid var(--cp-accent); padding: 4px 0 4px 18px; margin: 22px 0;
+}
+footer { color: var(--cp-text-soft); font-size: 0.84rem; border-top: 1px solid var(--cp-border); padding-top: 18px; margin-top: 34px; }
+h3 { font-size: 1rem; margin: 22px 0 6px; }
+.pill { font-size: 0.72rem; padding: 2px 9px; border-radius: 999px; background: var(--cp-accent-soft); color: var(--cp-accent); font-weight: 700; }
+/*IGBAND-BEGIN*/
+/* -- at-a-glance band ----------------------------------------------------
+   The dashboard opens with sixteen sections of method. A reader who wants
+   the result has to earn it, and most will not. This band carries the four
+   numbers, the model split and the money split, and nothing else. */
+.ig { margin: 22px 0 26px; }
+.ig .igh {
+  display: flex; align-items: baseline; gap: 12px; flex-wrap: wrap;
+  margin: 0 0 14px;
+}
+.ig .igh h2 { margin: 0; font-size: 1.05rem; letter-spacing: 0.04em;
+  text-transform: uppercase; color: var(--cp-text-muted); }
+.ig .igh .igs { font-size: 0.84rem; color: var(--cp-text-soft); }
+
+.ig .igbig {
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(168px, 1fr));
+  gap: 14px; margin-bottom: 18px;
+}
+.ig .igbig > div {
+  background: var(--cp-surface); border: 1px solid var(--cp-border);
+  border-radius: 14px; padding: 18px 18px 16px;
+  box-shadow: 0 0 2px rgba(0,0,0,0.12), 0 1px 2px rgba(0,0,0,0.14);
+}
+.ig .igbig b { display: block; font-size: 2.05rem; line-height: 1.08;
+  letter-spacing: -0.025em; color: var(--cp-accent); }
+/* A date is eleven characters where every other headline is three or four, so
+   it wraps in a tile sized for a number. Smaller here rather than a wider
+   tile: widening the minimum would re-flow the whole band to fit two cells
+   that are the least important thing in it. */
+.ig .igbig b.dt { font-size: 1.42rem; letter-spacing: -0.01em; }
+.ig .igbig span { display: block; font-size: 0.76rem; margin-top: 6px;
+  text-transform: uppercase; letter-spacing: 0.05em;
+  color: var(--cp-text-muted); }
+.ig .igbig em { display: block; font-style: normal; font-size: 0.82rem;
+  color: var(--cp-text-soft); margin-top: 7px; }
+
+.ig .igrow {
+  background: var(--cp-surface); border: 1px solid var(--cp-border);
+  border-radius: 14px; padding: 18px 20px; margin-bottom: 14px;
+  box-shadow: 0 0 2px rgba(0,0,0,0.12), 0 1px 2px rgba(0,0,0,0.14);
+}
+.ig .igrow > h3 { margin: 0 0 12px; font-size: 0.78rem; font-weight: 700;
+  text-transform: uppercase; letter-spacing: 0.06em;
+  color: var(--cp-text-muted); }
+
+/* Deliberately NOT .bar - this page uses .bar for the ledger charts and the
+   masthead uses .mh-bar. A third meaning of the same class is how a stylesheet
+   starts fighting itself. */
+.ig .igm { display: grid; grid-template-columns: minmax(104px, 150px) 1fr auto;
+  gap: 12px; align-items: center; padding: 4px 0; font-size: 0.87rem; }
+.ig .igm .l { color: var(--cp-text); font-weight: 600;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ig .igm .t { background: var(--cp-surface-soft); border-radius: 5px;
+  height: 19px; overflow: hidden; border: 1px solid var(--cp-border); }
+/* display:block is load-bearing, not decoration. A fill written as a <span>
+   inside a track that is not a flex container stays inline, and an inline
+   element ignores width and height - so it renders 0x0 while the track around
+   it still paints. The chart then looks like an axis with no data rather than
+   like a broken page, which is why forty of them shipped that way on this
+   dashboard before anyone noticed. Blockifying here makes the rule correct for
+   either a <span> or a <div>. */
+.ig .igm .f { display: block; height: 100%; background: var(--cp-accent); }
+.ig .igm .v { font-family: Consolas, "Courier New", Courier, monospace;
+  font-size: 0.8rem; color: var(--cp-text-muted); min-width: 128px;
+  text-align: right; }
+
+.ig .igsplit { display: flex; height: 34px; border-radius: 9px;
+  overflow: hidden; border: 1px solid var(--cp-border); }
+.ig .igsplit div { display: flex; align-items: center; justify-content: center;
+  font-size: 0.74rem; font-weight: 600; color: var(--cp-accent-fg);
+  overflow: hidden; white-space: nowrap; }
+.ig .iglg { display: flex; flex-wrap: wrap; gap: 15px; margin-top: 11px;
+  font-size: 0.79rem; color: var(--cp-text-muted); }
+.ig .iglg i { display: inline-block; width: 11px; height: 11px;
+  border-radius: 3px; margin-right: 6px; vertical-align: -1px; }
+
+.ig .igfind { margin: 12px 0 0; font-size: 0.88rem; line-height: 1.55;
+  border-left: 3px solid var(--cp-accent); padding: 2px 0 2px 13px;
+  color: var(--cp-text-muted); }
+.ig .igfind b { color: var(--cp-text); }
+/*IGBAND-END*/
+</style>
+
+</head>
+<body>
+
+<header class="top">
+  <div class="wrap">
+<!--IGBAND-->
+<div class="ig" id="igband">
+  <div class="igh">
+    <h2>At a glance</h2>
+    <span class="igs">Every figure below is read from the client's own
+      per-request log. The method, the caveats and the things this page got
+      wrong are underneath.</span>
+  </div>
+  <div class="igbig" id="igbig"></div>
+
+  <div class="igrow">
+    <h3>Which models did the work</h3>
+    <div id="igmodels"></div>
+    <p class="igfind" id="igmodelfind"></p>
+  </div>
+
+  <div class="igrow">
+    <h3>Where the money went</h3>
+    <div class="igsplit" id="igmoney"></div>
+    <div class="iglg" id="igmoneylg"></div>
+    <p class="igfind" id="igmoneyfind"></p>
+  </div>
+</div>
+<!--/IGBAND-->
+    <div class="crumb" id="crumb"></div>
+    <h1>What this investigation cost</h1>
+    <p class="sub" id="lede"></p>
+    <div class="stats" id="hero"></div>
+  </div>
+</header>
+
+<div class="wrap">
+
+  <div class="card" id="why">
+    <h2>From tokens to public infrastructure</h2>
+    <p class="sub">Why a working project carries a page about its own consumption.</p>
+    <p>Every infrastructure system becomes governable at the moment it becomes measurable.
+      Electricity became governable through the kilowatt-hour. Telecommunications became
+      governable through the minute and the megabit. Cloud computing became governable
+      through the CPU-hour and the gigabyte of egress. The unit is never only a technical
+      detail &mdash; it is the language in which allocation, pricing and accountability can
+      be argued at all.</p>
+    <p><strong>Machine inference is entering that stage now, and the unit is published.</strong>
+      GitHub Docs states it directly:</p>
+    <blockquote class="loc">Each token is priced based on the model used, and the total is
+      converted into AI credits, where 1 AI credit = $0.01 USD.
+      <cite>GitHub. (2026). <i>Usage-based billing for organizations and enterprises</i>.
+      GitHub Docs. <a href="https://docs.github.com/en/copilot/concepts/billing/usage-based-billing-for-organizations-and-enterprises">Retrieved 4 August 2026.</a>
+      <span class="rating good">VERIFIED 5/5</span></cite></blockquote>
+    <p>That sentence is what makes this page possible. Almost every public claim about what
+      AI-assisted work costs rests on an invented denominator: a remembered number of hours,
+      a guessed number of requests, a rate nobody published.
+      <b>This page rests on a local ledger that was written as the work happened</b> &mdash;
+      one row per request, with the price it was billed at, reconciled against the client's
+      own recorded total. It is not a survey and it is not an estimate.</p>
+    <div class="note"><strong>The public term is <i>AI credits</i>.</strong> The field this
+      dashboard actually reads is <code>nano_aiu</code>, a telemetry subunit that appears
+      in the local session store and on no public billing page. It is used here because it
+      is what the data contains; everything quotable is converted to credits and to
+      dollars. Anyone citing this work should cite credits.</div>
+    <p class="pull">The AI age will not only be defined by who has access to models. It will
+      also be defined by who can afford inference, who can measure it, who can govern it,
+      and who benefits from the systems built on top of it.</p>
+    <p>This project was produced for <strong id="whyusd"></strong> of list-price
+      inference. That figure is exact for what it covers and a floor for everything it
+      cannot see &mdash; which is stated, by name, further down this page. The ledger is
+      one half of the account; the caveats underneath it are the other, and they are not
+      decoration.</p>
+  </div>
+
+  <div class="card">
+    <h2>The ledger</h2>
+    <p class="sub">Every request that was billed, by model and by channel. Read from
+      <code>token_details_json</code>, which reconciles to the cost the client recorded on
+      <strong id="reconcount"></strong> &mdash; not from the token columns beside it, which do not.</p>
+    <div class="scroll"><table id="chanTable"></table></div>
+    <div class="dual" id="dual"></div>
+    <div class="note" id="dualnote"></div>
+  </div>
+
+  <div class="card">
+    <h2>Where it actually went</h2>
+    <p class="sub">Requests are grouped by what caused them. This is the panel that
+      changed how the work reads.</p>
+    <div class="split">
+      <div>
+        <h3>By initiator</h3>
+        <div class="bars" id="initBars"></div>
+      </div>
+      <div>
+        <h3>By reasoning effort</h3>
+        <div class="bars" id="effortBars"></div>
+      </div>
+    </div>
+    <div class="note" id="initnote"></div>
+  </div>
+
+  <div class="card">
+    <h2>The cache is doing most of the work</h2>
+    <p class="sub">Same traffic, same models, every cached token repriced at its model's
+      full input rate.</p>
+    <div class="stats" id="cfStats"></div>
+    <div class="note"><strong>What this is not.</strong> It is not a saving anyone banked.
+      Without a cache the agent would have been driven differently &mdash; smaller context,
+      fewer re-reads, more summarising &mdash; so the uncached column prices a workload that
+      would never have been run in that shape. It bounds the cache's contribution; it does
+      not measure a decision.</div>
+  </div>
+
+  <div class="card">
+    <h2>Three honest answers to &ldquo;how many hours&rdquo;</h2>
+    <p class="sub">They differ by an order of magnitude, and each one is measuring
+      something real. The question does not have a single answer.</p>
+    <div class="scroll"><table id="timeTable"></table></div>
+    <h3>Active time, by how long a pause has to be before it stops counting</h3>
+    <div class="bars" id="activeBars"></div>
+    <div class="note" id="timenote"></div>
+  </div>
+
+  <div class="card">
+    <h2>Day by day</h2>
+    <p class="sub" id="daysub"></p>
+    <div class="daykey">
+      <label>Scope
+        <select id="dayScope"></select>
+      </label>
+      <label>A pause stops counting after
+        <select id="dayCut"></select>
+      </label>
+      <span><i style="background:var(--cp-accent)"></i>model generating</span>
+      <span><i style="background:var(--cp-link)"></i>person &mdash; residual, not measured</span>
+    </div>
+    <div class="bars" id="dayBars"></div>
+    <div class="scroll" style="margin-top:20px"><table id="dayTable"></table></div>
+    <div class="note" id="daynote"></div>
+  </div>
+
+  <div class="card">
+    <h2>The rest of the project</h2>
+    <p class="sub" id="fleetsub"></p>
+    <div class="scroll"><table id="fleetTable"></table></div>
+    <div class="note" id="fleetnote"></div>
+  </div>
+
+  <div class="card">
+    <h2>Cost per turn</h2>
+    <p class="sub">One bar per thing that was asked for. The label is the opening of the
+      request as it was typed.</p>
+    <div class="bars" id="turnBars"></div>
+    <div class="scroll" style="margin-top:20px"><table id="turnTable"></table></div>
+  </div>
+
+  <div class="card">
+    <h2>Models, and sub-agents</h2>
+    <div class="split">
+      <div>
+        <h3>What was offered against what was used</h3>
+        <div id="modelSummary"></div>
+        <div class="scroll" style="margin-top:12px"><table id="modelTable"></table></div>
+      </div>
+      <div>
+        <h3>Sub-agents</h3>
+        <div id="agentSummary"></div>
+        <div class="scroll" style="margin-top:12px"><table id="agentTable"></table></div>
+      </div>
+    </div>
+    <div class="note" id="agentnote"></div>
+  </div>
+
+  <div class="card">
+    <h2>Energy <span class="rating" id="energyRating"></span></h2>
+    <p class="sub" id="energysub"></p>
+    <div class="scroll"><table id="energyTable"></table></div>
+    <p class="locus" id="energyLocus"></p>
+    <div class="note warn" id="energynote"></div>
+  </div>
+
+  <div class="card">
+    <h2>The other half of the ledger</h2>
+    <p class="sub">What the repository has to show for it. Counted, not appraised.</p>
+    <div class="stats" id="outStats"></div>
+    <div class="scroll" style="margin-top:20px"><table id="perUnit"></table></div>
+    <div class="note warn"><strong>Volume is not value.</strong> Every figure above is a
+      count of output, and this repository&rsquo;s own record argues against reading counts as
+      worth: several of its most useful moments were <em>withdrawals</em>, which reduce the
+      word count and improve the work. A ratio of dollars to words prices typing. Nothing
+      here prices whether the study is any good.</div>
+  </div>
+
+  <div class="card">
+    <h2>What is not measured</h2>
+    <p class="sub">Named, so that the gaps are as visible as the numbers.</p>
+    <div class="scroll"><table id="missTable"></table></div>
+  </div>
+
+  <div class="card">
+    <h2>What would have to exist next time</h2>
+    <p class="sub">The point of a first case study is to specify the instrument. These are
+      the fields that would close the gaps above, in the order they would pay off.</p>
+    <ol class="tight" id="instrument"></ol>
+  </div>
+
+  <div class="card">
+    <h2>Where this dashboard is likely to be wrong</h2>
+    <ul class="tight" id="weak"></ul>
+  </div>
+
+  <div class="card" id="processnote">
+    <h2>Process note: a claim this page made and withdrew</h2>
+    <p class="sub">Kept at the bottom because it is a note about method, not a number
+      anyone needs before reading the ledger. It is here at all because deleting it would
+      make the page look more certain than the work was.</p>
+    <blockquote class="wrong" id="wrongclaim"></blockquote>
+    <p><span class="withdrawn">That is withdrawn.</span> <span id="withdrawtext"></span></p>
+    <div class="note"><strong>Why it is still on the page.</strong> The claim was three
+      minutes from being written up as the finding of the case study &mdash; that agentic
+      work is unmeasurable because nobody records it. It was wrong, and it was wrong in the
+      flattering direction: an absence of evidence is a much easier thing to publish than
+      a ledger that can be checked. The correction stays visible for the same reason every
+      other withdrawal in this repository does.</div>
+  </div>
+
+  <footer>
+    <p id="foot"></p>
+  </footer>
+</div>
+
+<script>
+const DATA = /*USAGE*/null/*USAGE*/;
+
+const $ = (id) => document.getElementById(id);
+const n0 = (x) => Math.round(x).toLocaleString("en-US");
+const n1 = (x) => x.toLocaleString("en-US", {minimumFractionDigits:1, maximumFractionDigits:1});
+const n2 = (x) => x.toLocaleString("en-US", {minimumFractionDigits:2, maximumFractionDigits:2});
+const usd = (x) => (x > 0 && x < 0.005) ? "<$0.01"
+  : "$" + x.toLocaleString("en-US", {minimumFractionDigits:2, maximumFractionDigits:2});
+const hrs = (s) => n2(s/3600) + " h";
+const esc = (s) => String(s).replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+const pct = (a,b) => b ? n1(100*a/b) + "%" : "0%";
+
+// A fixed palette drawn from theme variables only.
+const SHADES = ["var(--cp-accent)", "var(--cp-warning)", "var(--cp-link)", "var(--cp-success)", "var(--cp-border-strong)"];
+
+function table(el, cols, rows, foot) {
+  const head = "<thead><tr>" + cols.map(c =>
+    `<th class="${c.num ? "num" : ""}">${esc(c.label)}</th>`).join("") + "</tr></thead>";
+  const body = "<tbody>" + rows.map(r => "<tr>" + cols.map(c =>
+    `<td class="${c.num ? "num" : ""}">${c.raw ? r[c.key] : esc(r[c.key])}</td>`).join("") + "</tr>").join("") + "</tbody>";
+  const f = foot ? "<tfoot><tr>" + cols.map(c =>
+    `<td class="${c.num ? "num" : ""}">${foot[c.key] === undefined ? "" : esc(foot[c.key])}</td>`).join("") + "</tr></tfoot>" : "";
+  el.innerHTML = head + body + f;
+}
+
+function bars(el, items) {
+  const max = Math.max(...items.map(i => i.value), 1);
+  el.innerHTML = items.map(i => `
+    <div class="bar">
+      <span class="lab" title="${esc(i.label)}">${esc(i.label)}</span>
+      <span class="track"><span class="fill" style="width:${(100*i.value/max).toFixed(2)}%;background:${i.color || "var(--cp-accent)"}"></span></span>
+      <span class="val">${esc(i.text)}</span>
+    </div>`).join("");
+}
+
+// -- day by day --------------------------------------------------------------
+// The one thing to get right here is that A DAY IS A LOCAL DAY. The store
+// timestamps in UTC; in this project 19% of requests fall between 00:00 and
+// 04:00 UTC, which is the previous evening where the work happened. The
+// generator cuts on the machine's own midnight and reports which zone it used,
+// so the label below is read from the data rather than assumed.
+const DAYNAMES = ["Sun","Mon","Tue","Wed","Thu","Fri","Sat"];
+
+function dayLabel(iso) {
+  const p = iso.split("-").map(Number);
+  const d = new Date(p[0], p[1] - 1, p[2]);
+  return DAYNAMES[d.getDay()] + " " + p[2] + "/" + p[1];
+}
+
+// -- the rest of the project -------------------------------------------------
+// A usage store is per machine. Four sibling repositories of this project were
+// worked on from a second one, and no API exists to ask it for its numbers. So
+// this card does two things: it names the gap, and it merges whatever has been
+// exported into usage/contrib/ so the gap can be closed rather than only
+// admitted.
+//
+// The merge rule worth remembering: MONEY IS ADDITIVE AND A PERSON IS NOT.
+// Cost and tokens are summed. Model wall time is a union, and engaged time is
+// a union of sittings, because one person cannot be at two keyboards at once.
+function renderFleet() {
+  const F = DATA.fleet, S = DATA.siblings;
+  const sub = $("fleetsub"), tab = $("fleetTable"), note = $("fleetnote");
+  if (!sub || !tab) return;
+
+  if (F) {
+    const t = F.totals, tm = F.time, cut = tm.times[String(tm.default_cutoff_s)];
+    sub.innerHTML = `Merged across <b>${n0(t.projects)}</b> repositories on ` +
+      `<b>${n0(t.machines)}</b> machines: <b>${usd(t.usd)}</b> and ` +
+      `<b>${n0(t.requests)}</b> requests in total.`;
+    table(tab, [
+      {label: "repository", key: "project"},
+      {label: "machine", key: "machine"},
+      {label: "requests", key: "requests", num: true},
+      {label: "turns", key: "turns", num: true},
+      {label: "cost", key: "cost", num: true},
+      {label: "tokens", key: "tokens", num: true},
+      {label: "model h", key: "model", num: true},
+      {label: "days", key: "days", num: true},
+    ], F.sources.map(r => ({
+      project: r.project + (r.primary ? " \u2605" : ""),
+      machine: r.machine || "\u2014",
+      requests: n0(r.requests), turns: n0(r.turns), cost: usd(r.usd),
+      tokens: n0(r.tokens), model: n1(r.model_s / 3600), days: n0(r.days),
+    })), {
+      project: "all, merged", requests: n0(t.requests), turns: n0(t.turns),
+      cost: usd(t.usd), tokens: n0(t.tokens),
+      model: n1(tm.model_wall_s / 3600), days: n0(t.days),
+    });
+    // The total model cell is the UNION, not the sum of the column above it,
+    // and a reader who adds the column up deserves to be told why it differs.
+    let conc = "";
+    if (tm.concurrent_s >= 1) {
+      // Minutes read naturally for a short overlap and absurdly for a long
+      // one; this figure grew from five minutes in testing to over three
+      // hours in the real merge.
+      const c = tm.concurrent_s >= 5400
+        ? `${n1(tm.concurrent_s / 3600)} hours`
+        : `${n1(tm.concurrent_s / 60)} minutes`;
+      conc = ` The model column does not add up to its own total on purpose: for ` +
+        `<b>${c}</b> two machines were generating at ` +
+        `once, so ${n1(tm.model_work_s / 3600)} h of model work occupied only ` +
+        `${n1(tm.model_wall_s / 3600)} h of clock.`;
+    }
+    // The idle cut-off has to be applied to the PERSON, not to each keyboard,
+    // or the same pause counts differently depending on which machine the
+    // next request happened to land on. Publishing both figures makes the
+    // choice checkable instead of buried in the generator.
+    let bridged = "";
+    if (cut.engaged_per_machine_s &&
+        cut.engaged_s - cut.engaged_per_machine_s >= 60) {
+      bridged = ` The cut-off is applied to the pooled stream rather than to each ` +
+        `machine separately, which is worth ${n0(Math.round(
+          (cut.engaged_s - cut.engaged_per_machine_s) / 60))} minutes here: a gap ` +
+        `short enough to count as engaged on one machine cannot become a pause ` +
+        `merely because the next request landed on the other one.`;
+    }
+    note.innerHTML = `<b>Money is additive and a person is not.</b> Cost, tokens and ` +
+      `requests are summed across machines.${conc} Engaged time is a union of ` +
+      `sittings rather than a sum, because there is one person and they cannot be ` +
+      `at two keyboards at once &mdash; at the ${tm.default_cutoff_s / 60} min cut-off ` +
+      `that is ${n1(cut.engaged_s / 3600)} h engaged, ${n1(cut.model_s / 3600)} h of it ` +
+      `model, leaving ${n1(cut.person_s / 3600)} h as the person residual.${bridged} ` +
+      `Adding the per-machine residuals instead would inflate the weakest column ` +
+      `on this page, and would do it invisibly.`;
+    return;
+  }
+
+  if (!S || !S.rows || !S.rows.length) { sub.textContent = ""; return; }
+  const known = S.rows.filter(r => r.reachable).length;
+  sub.innerHTML = `This page can see one repository. <b>${n0(S.rows.length)}</b> more ` +
+    `belong to the same project and were worked on from another machine, and ` +
+    `<b>none of their cost appears in any figure above</b>.`;
+  table(tab, [
+    {label: "repository", key: "name"},
+    {label: "commits", key: "commits", num: true},
+    {label: "first commit", key: "first", num: true},
+    {label: "last commit", key: "last", num: true},
+    {label: "requests", key: "requests", num: true},
+    {label: "cost", key: "cost", num: true},
+  ], S.rows.map(r => ({
+    name: r.name,
+    commits: r.commits === null ? "\u2014" : n0(r.commits),
+    first: r.first_commit ? r.first_commit.slice(0, 10) : "\u2014",
+    last: r.last_commit ? r.last_commit.slice(0, 10) : "\u2014",
+    requests: "not measured", cost: "not measured",
+  })));
+  note.innerHTML = `<b>Every total on this page is a floor for the project and an ` +
+    `exact figure only for this repository.</b> ${esc(S.why)}` +
+    (known ? ` Commit counts were read from GitHub on ` +
+      `${esc(S.fetched.slice(0, 10))}; the spend cannot be read the same way, which ` +
+      `is why one column here is a number and the next two are an admission.` : "");
+}
+
+function renderDays() {
+  // TWO SCOPES, AND THE DIFFERENCE BETWEEN THEM IS THE POINT. This repository's
+  // days are read from the local store. The merged days include the sibling
+  // repositories, whose usage was exported from another machine. On the day
+  // those repositories were built the two differ by two orders of magnitude,
+  // so showing only the local view would misdescribe the day badly - and
+  // showing only the merged view would hide which part is first-hand.
+  const scope = $("dayScope");
+  const F = DATA.fleet;
+  const VIEWS = [{key: "self", label: "this repository", days: DATA.days}];
+  if (F && F.days && F.days.length) {
+    VIEWS.push({key: "all", label: "all repositories", days: {
+      zone: DATA.days.zone, cutoffs: DATA.days.cutoffs,
+      default_cutoff_s: DATA.days.default_cutoff_s, rows: F.days,
+    }});
+  }
+  if (scope) {
+    scope.innerHTML = VIEWS.map((v, i) =>
+      `<option value="${i}"${i === VIEWS.length - 1 ? " selected" : ""}>${esc(v.label)}</option>`
+    ).join("");
+    scope.style.display = VIEWS.length > 1 ? "" : "none";
+    scope.parentElement.style.display = VIEWS.length > 1 ? "" : "none";
+  }
+
+  function view() { return VIEWS[Math.min(scope ? +scope.value : 0, VIEWS.length - 1)]; }
+
+  function paint() {
+    const V = view();
+    drawDays(V.days, V.key === "all", VIEWS.length > 1);
+  }
+  if (scope) scope.onchange = paint;
+  paint();
+}
+
+function drawDays(D, merged, hasScope) {
+  if (!D || !D.rows || !D.rows.length) return;
+  const rows = D.rows, sel = $("dayCut");
+
+  $("daysub").innerHTML =
+    "Each row is one calendar day in <strong>" + esc(D.zone.name) + "</strong> (UTC" +
+    esc(D.zone.utc_offset) + "), the zone the work happened in. The bar splits an " +
+    "engaged day into the part a model spent generating and the part it did not. " +
+    "<strong>Only the first of those is measured.</strong>" +
+    (hasScope
+      ? (merged
+          ? " These rows cover every repository in the project, merged &mdash; time is a union, not a sum."
+          : " These rows cover this repository only.")
+      : "");
+
+  sel.innerHTML = D.cutoffs.map(c =>
+    `<option value="${c}"${c === D.default_cutoff_s ? " selected" : ""}>` +
+    (c >= 3600 ? (c/3600) + " h" : (c/60) + " min") + "</option>").join("");
+
+  function draw() {
+    const cut = String(sel.value);
+    const t = r => r.times[cut] || {engaged_s:0, model_s:0, person_s:0, sittings:0};
+    const maxEng = Math.max(...rows.map(r => t(r).engaged_s), 1);
+
+    $("dayBars").innerHTML = rows.map(r => {
+      const x = t(r), w = 100 * x.engaged_s / maxEng;
+      // Percentages WITHIN the day, so the two segments always fill their own
+      // bar exactly. Scaling both against maxEng instead leaves a rounding
+      // sliver of track showing and reads as missing data.
+      const m = x.engaged_s ? 100 * x.model_s / x.engaged_s : 0;
+      return `
+      <div class="bar">
+        <span class="lab" title="${esc(r.date)}">${esc(dayLabel(r.date))}</span>
+        <span class="track"><span class="fill stack" style="width:${w.toFixed(2)}%">
+          <i style="width:${m.toFixed(2)}%;background:var(--cp-accent)" title="model ${n2(x.model_s/3600)} h"></i>
+          <i style="width:${(100-m).toFixed(2)}%;background:var(--cp-link)" title="person ${n2(x.person_s/3600)} h"></i>
+        </span></span>
+        <span class="val">${n2(x.engaged_s/3600)} h</span>
+      </div>`;
+    }).join("");
+
+    table($("dayTable"), [
+      {key:"d", label:"Day"},
+      {key:"req", label:"Requests", num:true},
+      {key:"tn", label:"Turns", num:true},
+      {key:"cost", label:"Cost", num:true},
+      {key:"eng", label:"Engaged h", num:true},
+      {key:"mod", label:"Model h", num:true},
+      {key:"per", label:"Person h", num:true},
+      {key:"share", label:"Person share", num:true},
+      {key:"sit", label:"Sittings", num:true}
+    ], rows.map(r => {
+      const x = t(r);
+      return {
+        d: r.date, req: n0(r.requests), tn: n0(r.turns_started), cost: usd(r.usd),
+        eng: n2(x.engaged_s/3600), mod: n2(x.model_s/3600), per: n2(x.person_s/3600),
+        share: x.engaged_s ? pct(x.person_s, x.engaged_s) : "\u2014",
+        sit: n0(x.sittings)
+      };
+    }), (() => {
+      const s = k => rows.reduce((a, r) => a + t(r)[k], 0);
+      const eng = s("engaged_s"), mod = s("model_s"), per = s("person_s");
+      return {
+        d: "All " + rows.length + " days",
+        req: n0(rows.reduce((a,r) => a + r.requests, 0)),
+        tn: n0(rows.reduce((a,r) => a + r.turns_started, 0)),
+        cost: usd(rows.reduce((a,r) => a + r.usd, 0)),
+        eng: n2(eng/3600), mod: n2(mod/3600), per: n2(per/3600),
+        share: eng ? pct(per, eng) : "\u2014",
+        sit: n0(rows.reduce((a,r) => a + t(r).sittings, 0))
+      };
+    })());
+
+    const eng = rows.reduce((a,r) => a + t(r).engaged_s, 0);
+    const per = rows.reduce((a,r) => a + t(r).person_s, 0);
+    const busiest = rows.reduce((a,b) => t(b).engaged_s > t(a).engaged_s ? b : a);
+    // The sensitivity IS the argument. Model time is a union of intervals and
+    // does not move when the cut-off does; person time is a residual and moves
+    // by a factor of three. Computed across every cut-off rather than asserted,
+    // so it stays true if the data changes.
+    const shares = D.cutoffs.map(c => {
+      const e = rows.reduce((a,r) => a + (r.times[String(c)]||{engaged_s:0}).engaged_s, 0);
+      const q = rows.reduce((a,r) => a + (r.times[String(c)]||{person_s:0}).person_s, 0);
+      return e ? 100*q/e : 0;
+    });
+    const mods = D.cutoffs.map(c =>
+      rows.reduce((a,r) => a + (r.times[String(c)]||{model_s:0}).model_s, 0));
+    const modFlat = Math.max(...mods) - Math.min(...mods) < 1;
+    $("daynote").innerHTML =
+      `<strong>The person is the smaller half of an engaged day, at every ` +
+      `cut-off on offer.</strong> At ${sel.options[sel.selectedIndex].text} the ` +
+      `residual is ${n2(per/3600)} h of ${n2(eng/3600)} engaged &mdash; ` +
+      `${pct(per, eng)}; across all four settings it runs from ` +
+      `${n1(Math.min(...shares))}% to ${n1(Math.max(...shares))}%. The heaviest ` +
+      `day was ${esc(busiest.date)} at ${n2(t(busiest).engaged_s/3600)} h and ` +
+      `${usd(busiest.usd)}. ` +
+      (modFlat
+        ? `<strong>Notice what does not move.</strong> Model hours stay at ` +
+          `${n2(mods[0]/3600)} whichever cut-off is chosen, because they are a ` +
+          `union of measured intervals. Person hours move by a factor of ` +
+          `${n1(Math.max(...shares)/Math.min(...shares))} across the same range, ` +
+          `because they are what is left over after an arbitrary decision about ` +
+          `how long a pause has to be. That difference is the whole reason one ` +
+          `of these columns is evidence and the other is an inference. `
+        : "") +
+      `${esc(DATA.days.person_note.split(". ").slice(1).join(". ")
+              .replace("this store", merged ? "any of these stores" : "this store"))} ` +
+      (merged
+        ? `Across repositories these hours are a <em>union</em>, not a sum: at the ` +
+          `default cut-off ${n1(DATA.fleet.time.concurrent_s/3600)} h of model work ` +
+          `overlapped, and there is only one person to be engaged.`
+        : `The daily engaged hours also run slightly above the single figure in the ` +
+          `table further up, because a day counts each sitting from when its first ` +
+          `request <em>started</em> and that table counts gaps <em>between</em> requests.`);
+  }
+
+  sel.onchange = draw;
+  draw();
+}
+
+//IGBAND-BEGIN
+// -- at-a-glance band ------------------------------------------------------
+// Rendered from the same DATA object as the rest of the page, so the headline
+// numbers cannot drift away from the detail underneath them.
+function renderBand() {
+  const d = DATA, t = d.totals, T = d.time, tk = t.tokens;
+  const allTokens = tk.input + tk.cache_read + tk.cache_write + tk.output;
+  const active = (T.active || []).find(a => a.cutoff_s === 300) ||
+                 (T.active || [])[0] || null;
+  // Dates are shown as plain calendar days in the zone the work happened in.
+  // A reader asking "is this current" is asking about the published work, so
+  // last-updated is the last COMMIT where one exists, not the last request -
+  // a session can burn requests without publishing a line.
+  const D = d.dates || {};
+  const day = iso => {
+    if (!iso) return "\u2014";
+    const p = String(iso).slice(0, 10).split("-").map(Number);
+    return new Date(p[0], p[1] - 1, p[2]).toLocaleDateString("en-US",
+      { year: "numeric", month: "short", day: "numeric" });
+  };
+  const updated = D.last_commit || D.last_request;
+
+  // WHEN THE LABEL SAYS FIVE REPOSITORIES, THE NUMBER BESIDE IT MUST COVER
+  // FIVE REPOSITORIES. Merged usage makes the headline figures project-wide;
+  // without it they are this repository's and the tile says the total is a
+  // floor. Getting this pairing wrong would understate the project by more
+  // than half while looking authoritative.
+  const F = d.fleet;
+  const bigUsd = F ? F.totals.usd : t.usd;
+  const bigReq = F ? F.totals.requests : t.requests;
+  const bigTurns = F ? F.totals.turns : t.turns;
+  const bigTok = F ? F.totals.tokens : allTokens;
+  const bigHrs = F ? F.time.times[String(F.time.default_cutoff_s)].engaged_s / 3600
+                   : (active ? active.active_s / 3600 : null);
+  // Models used is a SET across repositories, not a sum: the sibling work
+  // reached for one the primary session never used, and adding the counts
+  // would have claimed nine of thirty-nine.
+  const bigModels = F
+    ? new Set([].concat(...F.sources.map(s => s.models || []))).size
+    : t.models;
+
+  $("igbig").innerHTML = [
+    [day(D.started), "research started",
+     D.active_days ? D.active_days + " active days over " + D.calendar_days + " calendar days"
+                   : "first request issued", "dt"],
+    [day(updated), "last updated",
+     D.last_commit ? "most recent commit" : "most recent model request", "dt"],
+    [usd(bigUsd), "total metered cost",
+     (F
+        ? "across " + n0(F.totals.projects) + " repositories, " +
+          usd(t.usd) + " of it here"
+        : (d.siblings && d.siblings.rows.length
+             ? "a floor: " + n0(d.siblings.rows.length) + " sibling repos unmeasured"
+             : n0(Math.round(t.aiu)) + " AI credits, at published rates"))],
+    [n0(bigReq), "model requests",
+     n0(bigTurns) + " human turns drove them"],
+    [bigModels + " of " + d.catalogue.offered, "models used",
+     d.catalogue.selectable + " were selectable"],
+    [bigHrs === null ? "\u2014" : n1(bigHrs) + " h", "engaged time",
+     F ? n1(F.time.model_wall_s / 3600) + " h of it a model generating"
+       : (active ? "over " + n1(T.wall_span_s / 3600) + " h of calendar"
+                 : "not computed")],
+    [n0(Math.round(bigTok / 1e6)) + "M", "tokens billed",
+     F ? n0(Math.round(allTokens / 1e6)) + "M of them in this repository"
+       : pct(tk.cache_read, allTokens) + " of them re-read from cache"],
+    [n0(d.outputs.markdown_words), "words published",
+     n0(d.outputs.commit_count) + " commits"]
+  ].map(([b, s, e, k]) =>
+    `<div><b class="${k || ""}">${esc(b)}</b><span>${esc(s)}</span><em>${esc(e)}</em></div>`
+  ).join("");
+
+  // Models, biggest first, measured by spend rather than by request count -
+  // requests are not equal in size and ranking by them flatters the cheap one.
+  const ms = d.models.slice().sort((a, b) => b.usd - a.usd);
+  const top = ms.length ? ms[0].usd : 1;
+  $("igmodels").innerHTML = ms.map(m => `
+    <div class="igm">
+      <span class="l" title="${esc(m.model)}">${esc(m.model)}</span>
+      <span class="t"><span class="f" style="width:${(100 * m.usd / top).toFixed(2)}%"></span></span>
+      <span class="v">${usd(m.usd)} &middot; ${n0(m.requests)} req</span>
+    </div>`).join("");
+
+  // The delegation identity. Asserted from the data rather than typed, and it
+  // says nothing at all if the identity does not hold.
+  const subReq = (d.agents || []).reduce((s, a) => s + a.requests, 0);
+  const subModels = [...new Set((d.agents || []).flatMap(a => a.models || []))];
+  const delegated = ms.filter(m => subModels.includes(m.model));
+  const exact = subModels.length === 1 && delegated.length === 1 &&
+                delegated[0].requests === subReq && subReq > 0;
+  $("igmodelfind").innerHTML = exact
+    ? `<b>The model split is exactly the delegation boundary.</b> All
+       ${n0(subReq)} <code>${esc(subModels[0])}</code> requests are sub-agent
+       requests &mdash; it never ran on the main thread, and the main model
+       never ran inside a sub-agent. The second model is not a second opinion;
+       it is ${d.totals.subagents} delegated searches.`
+    : `${n0(subReq)} of ${n0(t.requests)} requests ran inside
+       ${d.totals.subagents} sub-agents.`;
+
+  // Money by channel, pooled across models. Cache read is the cheapest token
+  // there is and still the largest line, which is the whole point.
+  const byType = {};
+  (d.channels || []).forEach(c => {
+    byType[c.type] = (byType[c.type] || 0) + c.usd;
+  });
+  const LABEL = {
+    cache_read: "reading what it already sent",
+    cache_write: "putting context into cache",
+    output: "writing",
+    input: "fresh input"
+  };
+  const COLOR = {
+    cache_read: "var(--cp-accent)",
+    cache_write: "var(--cp-accent-muted, #6e7781)",
+    output: "var(--cp-success)",
+    input: "var(--cp-warning)"
+  };
+  const rows = Object.entries(byType).sort((a, b) => b[1] - a[1]);
+  const sum = rows.reduce((s, r) => s + r[1], 0) || 1;
+  $("igmoney").innerHTML = rows.map(([k, v]) => {
+    const w = 100 * v / sum;
+    return `<div style="width:${w.toFixed(2)}%;background:${COLOR[k] || "var(--cp-accent)"}"
+            title="${esc(LABEL[k] || k)}: ${usd(v)}">${w > 9 ? w.toFixed(0) + "%" : ""}</div>`;
+  }).join("");
+  $("igmoneylg").innerHTML = rows.map(([k, v]) =>
+    `<span><i style="background:${COLOR[k] || "var(--cp-accent)"}"></i>${esc(LABEL[k] || k)} &mdash; ${usd(v)}</span>`
+  ).join("");
+
+  const cf = d.counterfactual || {};
+  $("igmoneyfind").innerHTML = cf.uncached_usd
+    ? `<b>Most of the bill is re-reading.</b> An agent's context is resent on
+       every request, so the same words are paid for again and again. Caching
+       held that to ${usd(cf.actual_usd)}; without it the identical work would
+       have listed at <b>${usd(cf.uncached_usd)}</b>, or
+       ${cf.ratio.toFixed(1)}&times; more. What the model actually wrote is
+       ${pct(tk.output, allTokens)} of the tokens.`
+    : `What the model actually wrote is ${pct(tk.output, allTokens)} of the
+       tokens billed.`;
+}
+//IGBAND-END
+function render() {
+  const d = DATA, t = d.totals, T = d.time;
+
+  $("lede").textContent =
+    `Every request this project sent to a model, priced from the client's own ` +
+    `per-request log. ${n0(t.requests)} requests across ${n0(t.turns)} turns, ` +
+    `${t.models} models and ${t.subagents} sub-agents, on ` +
+    `${d.project.repository || d.project.name}.`;
+
+  const tk = t.tokens;
+  const allTokens = tk.input + tk.cache_read + tk.cache_write + tk.output;
+  $("hero").innerHTML = [
+    [usd(t.usd), "list-price cost", "at published token rates"],
+    [n0(t.requests), "model requests", n0(t.premium_requests) + " of them user-initiated"],
+    [n0(Math.round(allTokens/1e6)) + "M", "tokens billed", pct(tk.cache_read, allTokens) + " served from cache"],
+    [n2(T.inference_union_s/3600) + " h", "model busy time", "against " + n1(T.wall_span_s/3600) + " h of wall clock"],
+    [n0(d.outputs.commit_count), "commits", n0(d.outputs.insertions) + " lines added"],
+    [n0(d.outputs.markdown_words), "words published", "across " + d.outputs.files_by_ext[".md"] + " documents"]
+  ].map(([b,s,e]) => `<div class="stat"><b>${b}</b><span>${s}</span><em>${e}</em></div>`).join("");
+
+  renderBand();
+  $("whyusd").textContent = usd(t.usd) + " (" + n0(Math.round(t.aiu)) + " AI credits)";
+
+  // The crumb names the project this page is about. A project that embeds this
+  // page in a larger site overwrites the element; left alone it degrades to the
+  // project name rather than to a broken link into a directory that may not
+  // exist here.
+  const crumb = $("crumb");
+  if (crumb && !crumb.innerHTML.trim())
+    crumb.textContent = (d.project.repository || d.project.name || "this project")
+                        + " \u203a usage dashboard";
+
+  // --- the withdrawal -----------------------------------------------------
+  $("wrongclaim").textContent =
+    "main.jsonl does not contain what is being asked for. All of its lines are " +
+    "session_start. There are no per-request rows, no model names, no token counts, " +
+    "no costs. The environment does not record the thing the user most wants, so " +
+    "the dashboard's first job is to say so.";
+  $("withdrawtext").textContent =
+    `The file that was searched was the wrong file. The Copilot CLI keeps its own ` +
+    `store at ~/.copilot/session-store.db, and table assistant_usage_events held ` +
+    `${n0(t.requests)} rows for this project alone, each carrying the model, the token ` +
+    `count on four billing channels, the cost in nano-AIU, the wall duration, the ` +
+    `turn it belonged to and, for sub-agent work, the id of the tool call that ` +
+    `spawned it. Everything below comes from rows that were there the whole time.`;
+
+  // --- ledger -------------------------------------------------------------
+  $("reconcount").textContent = "all " + n0(t.requests) + " rows";
+  const ch = d.channels.map(c => ({
+    model: c.model, type: c.type.replace("_", " "),
+    price: "$" + n2(c.usd_per_1m) + " / 1M",
+    tokens: n0(c.tokens), tshare: pct(c.tokens, allTokens),
+    cost: usd(c.usd), cshare: pct(c.usd, t.usd)
+  }));
+  table($("chanTable"), [
+    {key:"model", label:"Model"}, {key:"type", label:"Channel"},
+    {key:"price", label:"Rate", num:true}, {key:"tokens", label:"Tokens", num:true},
+    {key:"tshare", label:"% of tokens", num:true}, {key:"cost", label:"Cost", num:true},
+    {key:"cshare", label:"% of cost", num:true}
+  ], ch, {model:"Total", tokens:n0(allTokens), tshare:"100%", cost:usd(t.usd), cshare:"100%"});
+
+  // token share vs cost share, the contrast that matters
+  const kinds = ["cache_read", "cache_write", "output", "input"];
+  const tokBy = {}, costBy = {};
+  kinds.forEach(k => { tokBy[k] = 0; costBy[k] = 0; });
+  d.channels.forEach(c => { tokBy[c.type] += c.tokens; costBy[c.type] += c.usd; });
+  const seg = (map, total, fmt) => `<div class="seg">` + kinds.map((k,i) => {
+    const v = map[k], p = 100*v/total;
+    return p < 0.4 ? "" : `<div style="width:${p.toFixed(2)}%;background:${SHADES[i]}" title="${k}: ${fmt(v)}">${p > 7 ? n1(p)+"%" : ""}</div>`;
+  }).join("") + `</div>`;
+  $("dual").innerHTML =
+    `<div class="row"><div class="cap">Share of tokens</div>${seg(tokBy, allTokens, n0)}</div>` +
+    `<div class="row"><div class="cap">Share of cost</div>${seg(costBy, t.usd, usd)}</div>` +
+    `<div class="legend">` + kinds.map((k,i) =>
+      `<span><i style="background:${SHADES[i]}"></i>${k.replace("_"," ")}</span>`).join("") + `</div>`;
+  $("dualnote").innerHTML =
+    `<strong>The two bars are not the same shape, and that is the economics of this ` +
+    `kind of work.</strong> Cache reads are ${pct(tokBy.cache_read, allTokens)} of every ` +
+    `token billed but ${pct(costBy.cache_read, t.usd)} of the money. Output is ` +
+    `${pct(tokBy.output, allTokens)} of the tokens and ${pct(costBy.output, t.usd)} of the ` +
+    `money. What an agent <em>reads</em> is voluminous and cheap; what it <em>writes</em> ` +
+    `is tiny and expensive. Fresh, uncached input &mdash; the thing a token counter would ` +
+    `intuitively call "the prompt" &mdash; is ${pct(tokBy.input, allTokens)} of the total.`;
+
+  // --- initiators and efforts --------------------------------------------
+  const initLabel = {
+    "agent": "agent, continuing a turn", "user": "user, opening a turn",
+    "compaction": "compaction, summarising context", "sub-agent": "sub-agent, delegated"
+  };
+  bars($("initBars"), d.initiators.map((i,ix) => ({
+    label: initLabel[i.initiator] || String(i.initiator),
+    value: i.usd, color: SHADES[ix % SHADES.length],
+    text: usd(i.usd) + "  " + n0(i.requests) + "r"
+  })));
+  bars($("effortBars"), d.efforts.map((e,ix) => ({
+    label: e.effort === null || e.effort === "None" ? "(not recorded)" : String(e.effort),
+    value: e.usd, color: SHADES[ix % SHADES.length],
+    text: usd(e.usd) + "  " + n0(e.requests) + "r"
+  })));
+  const byInit = {};
+  d.initiators.forEach(i => byInit[i.initiator] = i);
+  const comp = byInit["compaction"], user = byInit["user"], sub = byInit["sub-agent"];
+  if (comp && user && sub) {
+    $("initnote").innerHTML =
+      `<strong>Compaction is the third largest cost centre in this project.</strong> ` +
+      `The ${n0(comp.requests)} requests that exist only to summarise the conversation so ` +
+      `it keeps fitting in a context window cost ${usd(comp.usd)} &mdash; ` +
+      `${n1(comp.usd/user.usd)} times everything the user typed (${usd(user.usd)} across ` +
+      `${n0(user.requests)} requests) and ${n1(comp.usd/sub.usd)} times all delegated ` +
+      `sub-agent work put together (${usd(sub.usd)}). It is pure overhead: it produces no ` +
+      `output anyone reads, and it is invisible in every account of this project except ` +
+      `this one. On a long-running session it is a first-class line item, and it is the ` +
+      `single strongest argument in this data for keeping sessions short and scoped.`;
+  }
+
+  // --- counterfactual ------------------------------------------------------
+  const cf = d.counterfactual;
+  $("cfStats").innerHTML = [
+    [usd(cf.actual_usd), "as billed", "with the prompt cache"],
+    [usd(cf.uncached_usd), "repriced", "every cached token at full input rate"],
+    [n1(cf.ratio) + "x", "difference", "the cache is the dominant cost lever here"],
+    [usd(cf.uncached_usd - cf.actual_usd), "difference", "in list-price terms"]
+  ].map(([b,s,e]) => `<div class="stat"><b>${b}</b><span>${s}</span><em>${e}</em></div>`).join("");
+
+  // --- time ---------------------------------------------------------------
+  table($("timeTable"), [
+    {key:"m", label:"Measure"}, {key:"v", label:"Hours", num:true}, {key:"w", label:"What it actually counts"}
+  ], [
+    {m:"Wall-clock span", v:n2(T.wall_span_s/3600),
+     w:"First request to last. Includes two nights and a day and a half when nothing happened. Not work."},
+    {m:"Model busy time", v:n2(T.inference_union_s/3600),
+     w:"Seconds in which at least one request was in flight. Overlapping sub-agent requests counted once."},
+    {m:"Sum of request durations", v:n2(T.inference_sum_s/3600),
+     w:"The same thing without de-duplication. Exceeds the union by " +
+       n1(100*(T.inference_sum_s-T.inference_union_s)/T.inference_sum_s) + "% because sub-agents ran alongside the main agent."},
+    {m:"Engaged time (5 min cut-off)", v:n2((T.active.find(a=>a.cutoff_s===300)||{active_s:0}).active_s/3600),
+     w:"Gaps between consecutive requests, counting any pause under five minutes as continuous work."}
+  ]);
+  bars($("activeBars"), T.active.map(a => ({
+    label: a.cutoff_s/60 + " min cut-off",
+    value: a.active_s, text: n2(a.active_s/3600) + " h, " + a.sittings + " sittings"
+  })));
+  const a300 = T.active.find(a => a.cutoff_s === 300) || {active_s: 0};
+  $("timenote").innerHTML =
+    `<strong>The number worth taking away is the ratio, not any of the totals.</strong> ` +
+    `At a five-minute cut-off there were ${n2(a300.active_s/3600)} engaged hours, of which ` +
+    `${n2(T.inference_union_s/3600)} had a model actively generating &mdash; ` +
+    `${pct(T.inference_union_s, a300.active_s)}. Two independent measurements, one from ` +
+    `request timestamps and one from request durations, arriving at nearly the same ` +
+    `number. For almost all of the engaged time in this project, the human was waiting. ` +
+    `Anyone budgeting this kind of work in person-hours is budgeting the wrong resource.`;
+
+  // --- day by day ---------------------------------------------------------
+  renderDays();
+  renderFleet();
+
+  // --- turns --------------------------------------------------------------
+  const turns = d.turns.slice().sort((a,b) => (a.index||0)-(b.index||0));
+  bars($("turnBars"), turns.map(t2 => ({
+    label: (t2.index === null ? "?" : t2.index) + ". " + (t2.label || "(no text recorded)"),
+    value: t2.usd, text: usd(t2.usd)
+  })));
+  table($("turnTable"), [
+    {key:"i", label:"Turn", num:true}, {key:"l", label:"Request"},
+    {key:"r", label:"Requests", num:true}, {key:"o", label:"Output tok", num:true},
+    {key:"rr", label:"Reasoning tok", num:true}, {key:"m", label:"Model time", num:true},
+    {key:"c", label:"Cost", num:true}
+  ], turns.map(t2 => ({
+    i: t2.index === null ? "-" : t2.index,
+    l: t2.label || "(no text recorded)",
+    r: n0(t2.requests), o: n0(t2.output), rr: n0(t2.reasoning),
+    m: n1(t2.duration_ms/60000) + " min", c: usd(t2.usd)
+  })), {i:"", l:"Total", r:n0(t.requests), o:n0(tk.output), rr:n0(tk.reasoning),
+        m:n1(T.inference_sum_s/60) + " min", c:usd(t.usd)});
+
+  // --- models and agents ---------------------------------------------------
+  const cat = d.catalogue;
+  $("modelSummary").innerHTML = cat.offered
+    ? `<p class="sub"><strong>${cat.offered}</strong> models were on offer, ` +
+      `<strong>${cat.selectable}</strong> of them selectable in the picker. ` +
+      `<strong>${cat.used.length}</strong> were used.</p>`
+    : `<p class="sub">No model catalogue was found beside the client, so the number on offer is unknown.</p>`;
+  table($("modelTable"), [
+    {key:"m", label:"Model"}, {key:"r", label:"Requests", num:true},
+    {key:"o", label:"Output tok", num:true}, {key:"c", label:"Cost", num:true},
+    {key:"s", label:"% of cost", num:true}
+  ], d.models.map(m => ({
+    m: m.model, r: n0(m.requests), o: n0(m.output), c: usd(m.usd), s: pct(m.usd, t.usd)
+  })));
+  $("agentSummary").innerHTML =
+    `<p class="sub"><strong>${t.subagents}</strong> sub-agents ran, issuing ` +
+    `<strong>${n0(t.subagent_requests)}</strong> requests between them &mdash; ` +
+    `${pct(t.subagent_requests, t.requests)} of all traffic.</p>`;
+  table($("agentTable"), [
+    {key:"a", label:"Spawned by tool call"}, {key:"t", label:"Turn", num:true},
+    {key:"m", label:"Model"}, {key:"r", label:"Requests", num:true}, {key:"c", label:"Cost", num:true}
+  ], d.agents.map(a => ({
+    a: a.agent.slice(0, 16) + "...", t: a.turn, m: a.models.join(", "),
+    r: n0(a.requests), c: usd(a.usd)
+  })));
+  const subCost = d.agents.reduce((s,a) => s + a.usd, 0);
+  $("agentnote").innerHTML =
+    `<strong>Delegation was cheap and rare.</strong> All sub-agent work together came to ` +
+    `${usd(subCost)}, ${pct(subCost, t.usd)} of the project. Each sub-agent ran on a ` +
+    `smaller model than the one driving the session, which is the mechanism: the expensive ` +
+    `model decides what to ask, the cheap model goes and reads. The counter-reading is ` +
+    `equally available from this data &mdash; only ${t.subagents} were ever spawned across ` +
+    `${n0(t.turns)} turns, so this is evidence that delegation is inexpensive, not evidence ` +
+    `that it was used well.`;
+
+  // --- energy --------------------------------------------------------------
+  const en = d.energy;
+  $("energyRating").textContent = "ESTIMATE, NOT MEASURED";
+  $("energysub").innerHTML =
+    `Nothing in this data is a joule. What follows multiplies a published per-query ` +
+    `figure by a request count that is exact. The ends of the bracket differ by a factor ` +
+    `of <strong>${n1(en.spread)}</strong>, so no single value from it should be quoted as ` +
+    `the energy cost of this project.`;
+  table($("energyTable"), [
+    {key:"s", label:"Scenario"}, {key:"w", label:"Wh / request", num:true},
+    {key:"k", label:"kWh total", num:true}, {key:"h", label:"= an average US home for", num:true}
+  ], en.scenarios.map(s => ({
+    s: s.scenario, w: n2(s.wh_per_request), k: n2(s.kwh), h: n1(s.household_hours) + " h"
+  })));
+  $("energyLocus").textContent = "\u201C" + en.source.locus + "\u201D \u2014 " +
+    en.source.authors + ", " + en.source.venue + ".";
+  $("energynote").innerHTML =
+    `<strong>Neither published regime describes this workload.</strong> ${esc(en.why_neither_regime_fits)} ` +
+    `The household comparison uses the US EIA figure: &ldquo;${esc(d.energy.household_source.locus)}&rdquo;`;
+
+  // --- outputs -------------------------------------------------------------
+  const o = d.outputs;
+  $("outStats").innerHTML = [
+    [n0(o.commit_count), "commits", o.commits.length ? o.commits[0].at.slice(0,10) + " to " + o.commits[o.commits.length-1].at.slice(0,10) : ""],
+    [n0(o.insertions), "lines added", n0(o.deletions) + " removed"],
+    [n0(o.tracked_files), "files tracked", n0(Math.round(o.bytes/1024)) + " KB"],
+    [n0(o.markdown_words), "words of prose", o.files_by_ext[".md"] + " markdown documents"],
+    [n0(o.files_by_ext[".html"] || 0), "HTML artifacts", "self-contained, no dependencies"],
+    [n0(o.files_by_ext[".py"] || 0), "Python scripts", "every figure regenerable"]
+  ].map(([b,s,e]) => `<div class="stat"><b>${b}</b><span>${s}</span><em>${e}</em></div>`).join("");
+  table($("perUnit"), [
+    {key:"m", label:"Unit rate"}, {key:"v", label:"Value", num:true}, {key:"c", label:"Read it with care"}
+  ], [
+    {m:"Cost per commit", v:usd(t.usd/o.commit_count), c:"Commits are not equal sized; three of these are rebuilds of a generated site."},
+    {m:"Cost per 1,000 published words", v:usd(1000*t.usd/o.markdown_words), c:"Counts prose only. Says nothing about whether the prose is correct."},
+    {m:"Cost per line added", v:"$" + (t.usd/o.insertions).toFixed(3), c:"Generated HTML dominates the line count, so this mostly prices a build script's output."},
+    {m:"Requests per turn", v:n1(t.requests/t.turns), c:"The agent issued this many model calls, on average, per thing that was asked for."},
+    {m:"Cost per user request", v:usd(t.usd/t.premium_requests), c:"What one typed instruction set in motion, at list prices."}
+  ]);
+
+  // --- not measured ---------------------------------------------------------
+  table($("missTable"), [{key:"a", label:"Not measured"}, {key:"b", label:"Why not, and what it would take"}],
+    d.not_measured.map(([a,b]) => ({a, b})));
+
+  // --- instrumentation ------------------------------------------------------
+  $("instrument").innerHTML = [
+    ["A stable request id, exposed to the user.", "Every row already carries one internally. Surfacing it is what makes a cost figure auditable by the person who paid it rather than only by whoever can read the SQLite file."],
+    ["Energy per request, reported by the server.", "This is the only item on the list that a client genuinely cannot derive. It is also the one the user asked for. Until a provider returns it, every energy number in this class of dashboard is an estimate multiplied by a count."],
+    ["A cost figure in the billing unit actually charged.", "The store prices tokens in AI credits; the subscription this work ran under charged premium requests. Both numbers are on this page and they differ by more than two orders of magnitude. Nothing available to a client can reconcile them. GitHub's move to usage-based billing narrows this gap in principle, but a client still cannot see which of its own requests landed on which side of it."],
+    ["Tool-call outcomes joined to the request that made them.", "The store records what was spent, never what came back. A failed command and a useful one cost the same and are indistinguishable here, so no efficiency measure is possible."],
+    ["A durable sub-agent name.", "Sub-agents are identified by the id of the tool call that spawned them, which says nothing about what they were for. Their purpose has to be reconstructed by hand."],
+    ["Retention long enough to matter.", "This store held one project cleanly. Nothing guarantees it will next month, and a case study whose evidence expires is an anecdote."]
+  ].map(([a,b]) => `<li><strong>${esc(a)}</strong> ${esc(b)}</li>`).join("");
+
+  // --- weaknesses -----------------------------------------------------------
+  $("weak").innerHTML = [
+    "The dollar figure is a list-price equivalent, not a bill. It prices the tokens at the rates the client publishes and converts at the documented 1 credit = $0.01. What was actually paid was a subscription, against which this work consumed " + n0(t.premium_requests) + " premium requests at a multiplier of " + (t.multipliers.join(", ") || "1") + ". Premium requests are the legacy unit - GitHub announced the move to usage-based billing in AI credits on 27 April 2026 - but they are kept on this page because they are the only figure here a reader can check against a bill they have seen. The two numbers differ by more than two orders of magnitude and this data cannot bridge them. If you quote one figure from this page, quote both.",
+    "One AIU is taken to be one US cent. GitHub's billing documentation states that 1 AI credit = $0.01 USD, and the per-model rates in the client's catalogue independently match three vendors' published list prices to the cent, with cache rates at the published 0.1x and 1.25x multiples of base. What is still inferred is the last step: that the total_nano_aiu column in a local CLI store is denominated in that same documented credit. That is the assumption an auditor should attack first.",
+    "The token columns in the store disagree with the token details on the " + n0((byInit["compaction"] || {requests:0}).requests) + " compaction rows. This dashboard reads the details, which reconcile exactly to the recorded cost on every row; a dashboard that read the columns would silently under-count. Anyone rebuilding this should check that assertion still holds rather than assume it.",
+    "Engaged time is inferred from gaps between requests. It cannot tell a user thinking hard about the last answer from a user who has gone to lunch, and it cannot see any time spent reading the output after the final request of a sitting.",
+    "The energy panel is an estimate applied to a workload the source paper does not describe. Its own bracket spans a factor of " + n1(d.energy.spread) + ".",
+    "The output side counts artifacts. It contains no measure of whether any of them is correct, useful, or wanted, and this repository has already withdrawn several published claims that would have counted as output on the day they were written.",
+    "The data is live and this page is part of it. Generating this dashboard cost requests that appear in the next run of the generator. The totals here are a snapshot that was already out of date when it rendered, and a self-measuring instrument cannot record its own last measurement.",
+    (d.fleet
+      ? "Merging usage across machines relies on files exported from those machines rather than read from them. A machine that was never exported is still missing, and nothing on this page can detect that it existed. The merged figures are exact for the sources listed and a floor for anything beyond them."
+      : "The usage store is per machine, and this project was also worked on from a second one in " + n0((d.siblings || {rows: []}).rows.length) + " sibling repositories. None of their requests, tokens or cost appear anywhere on this page. Every total here is exact for this repository and a FLOOR for the project."),
+    (d.fleet && d.fleet.time.concurrent_s >= 60
+      ? "Concurrent time is measured; simultaneous attention is not. For " + n1(d.fleet.time.concurrent_s / 3600) + " h two machines were generating at the same moment, which is a fact about the clock. It does not follow that one person was attending to both, and on those hours the person residual should be read as softer still rather than firmer."
+      : null)
+  ].filter(Boolean).map(s => `<li>${esc(s)}</li>`).join("");
+
+  $("foot").innerHTML =
+    `Generated ${esc(d.generated_at)} by <code>${esc(d.generator)}</code> from ` +
+    `session <code>${esc(d.session.id)}</code>. Data: <a href="usage-data.json">usage-data.json</a>. ` +
+    `Rebuild with <code>python usage/build_usage_data.py</code>; it takes a ` +
+    `<code>--cwd</code> or <code>--session</code> and works on any project.` +
+    `<br><br><strong>Sources for the framing above.</strong> ` +
+    `GitHub. (2026). <i>Usage-based billing for organizations and enterprises</i>. GitHub Docs. ` +
+    `<a href="https://docs.github.com/en/copilot/concepts/billing/usage-based-billing-for-organizations-and-enterprises">docs.github.com</a> &middot; ` +
+    `GitHub. (2026). <i>Models and pricing for GitHub Copilot</i>. GitHub Docs. ` +
+    `<a href="https://docs.github.com/en/copilot/reference/copilot-billing/models-and-pricing">docs.github.com</a> &middot; ` +
+    `Rodriguez, M. (2026, April 27). <i>GitHub Copilot is moving to usage-based billing</i>. The GitHub Blog. ` +
+    `<a href="https://github.blog/news-insights/company-news/github-copilot-is-moving-to-usage-based-billing/">github.blog</a>. ` +
+    `The infrastructure framing is developed in <i>From Tokens to Public Infrastructure: ` +
+    `Measuring Intelligence Consumption</i>, prepared for this case study by Ethical Tech CoLab, ` +
+    `and summarised in the usage-calc README.`;
+}
+
+if (DATA) { render(); }
+else {
+  document.querySelector(".wrap").innerHTML =
+    '<div class="card"><h2>No data</h2><p class="sub">This page has not had a payload ' +
+    'injected. Run <code>python usage/build_usage_data.py</code>.</p></div>';
+}
+</script>
+</body>
+</html>
