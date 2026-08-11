@@ -223,60 +223,139 @@ function resolve(arg) {
         fleetProblems.push('unmeasured columns are not labelled "not measured"');
     }
 
-    // The day card gained a SCOPE selector once sibling usage arrived. Both
-    // scopes must reconcile to their own totals - the merged view to the fleet
-    // totals, the local view to this session's - and the two must actually
-    // differ, or the selector is decoration.
+    // --- the repository selector ---------------------------------------------
+    // ONE selector, mounted into every panel that has a scope. Three ways this
+    // goes wrong quietly and none of them look like a broken page:
+    //   1. the selectors drift apart, so the day chart and the ledger beside it
+    //      describe different repositories under one heading;
+    //   2. a panel that cannot serve a selection shows the PRIMARY repository's
+    //      numbers under a sibling's label, which reads as a perfectly normal
+    //      card full of plausible figures;
+    //   3. the selector changes nothing at all, and is decoration.
     const scope = await page.evaluate(async () => {
       const D = (typeof DATA !== 'undefined') ? DATA : null;
-      const el = document.getElementById('dayScope');
-      if (!D || !el || el.options.length < 2) return { absent: true };
-      const read = async v => {
-        el.value = v; el.dispatchEvent(new Event('change'));
-        await new Promise(r => setTimeout(r, 60));
+      const sels = [...document.querySelectorAll('.repoScope')];
+      if (!D || !D.scopes || sels.length === 0) return { absent: true };
+      const S = D.scopes;
+      const day = document.getElementById('dayScope');
+      const pick = async v => {
+        day.value = v; day.dispatchEvent(new Event('change'));
+        await new Promise(r => setTimeout(r, 80));
         const f = [...document.querySelectorAll('#dayTable tfoot td')].map(t => t.textContent);
         return {
-          label: el.selectedOptions[0].textContent,
+          values: [...document.querySelectorAll('.repoScope')].map(e => e.value),
           rows: document.querySelectorAll('#dayTable tbody tr').length,
-          bars: document.querySelectorAll('#dayBars .bar').length,
-          req: +f[1].replace(/[^0-9]/g, ''), turns: +f[2].replace(/[^0-9]/g, ''),
-          cost: +f[3].replace(/[^0-9.]/g, ''), model: +f[5],
+          req: f.length ? +f[1].replace(/[^0-9]/g, '') : null,
+          turns: f.length ? +f[2].replace(/[^0-9]/g, '') : null,
+          cost: f.length ? +f[3].replace(/[^0-9.]/g, '') : null,
+          model: f.length ? +f[5] : null,
           sub: document.getElementById('daysub').textContent,
+          outSub: (document.getElementById('outsub') || {}).textContent || '',
+          outStats: (document.getElementById('outStats') || {}).textContent || '',
+          planHidden: (document.getElementById('planscopenote') || {}).hidden,
+          outHidden: (document.getElementById('outscopenote') || {}).hidden,
         };
       };
-      const self = await read('0'), all = await read('1');
-      el.value = '1'; el.dispatchEvent(new Event('change'));
-      return {
-        self, all,
-        wantSelfReq: D.totals.requests, wantSelfTurns: D.totals.turns,
-        wantAllReq: D.fleet.totals.requests, wantAllTurns: D.fleet.totals.turns,
-        wantAllCost: D.fleet.totals.usd,
-        wantAllModel: D.fleet.time.model_wall_s / 3600,
+      const main = S.entries.find(e => e.kind === 'main');
+      const sib = S.entries.find(e => e.kind === 'sibling');
+      const out = {
+        nsel: sels.length,
+        needs: sels.map(e => e.dataset.need),
+        offered: sels.map(e => [...e.options].map(o => o.value).join(',')),
+        want: S.entries.map(e => e.key).join(','),
+        mainKey: main ? main.key : null,
+        sibKey: sib ? sib.key : null,
+        all: await pick('all'),
+        wantAllReq: D.fleet ? D.fleet.totals.requests : D.totals.requests,
+        wantAllTurns: D.fleet ? D.fleet.totals.turns : D.totals.turns,
+        wantAllCost: D.fleet ? D.fleet.totals.usd : D.totals.usd,
+        wantAllModel: D.fleet ? D.fleet.time.model_wall_s / 3600 : null,
+        wantMainReq: D.totals.requests,
       };
+      if (main) out.main = await pick(main.key);
+      if (sib) out.sib = await pick(sib.key);
+      await pick('all');
+      return out;
     });
 
     const scopeProblems = [];
     if (!scope.absent) {
-      if (scope.self.req !== scope.wantSelfReq)
-        scopeProblems.push(`local scope ${scope.self.req} req != session ${scope.wantSelfReq}`);
-      if (scope.self.turns !== scope.wantSelfTurns)
-        scopeProblems.push(`local scope ${scope.self.turns} turns != ${scope.wantSelfTurns}`);
+      // every panel offers the SAME list - a panel with its own list is two
+      // controls wearing one name
+      scope.offered.forEach((o, k) => {
+        if (o !== scope.want)
+          scopeProblems.push(`selector ${k} offers ${o} not ${scope.want}`);
+      });
+      if (new Set(scope.needs).size !== scope.needs.length)
+        scopeProblems.push('two selectors declare the same capability');
       if (scope.all.req !== scope.wantAllReq)
-        scopeProblems.push(`merged scope ${scope.all.req} req != fleet ${scope.wantAllReq}`);
+        scopeProblems.push(`merged ${scope.all.req} req != fleet ${scope.wantAllReq}`);
       // The turn bug this check exists for reported one turn per REQUEST.
       if (scope.all.turns !== scope.wantAllTurns)
-        scopeProblems.push(`merged scope ${scope.all.turns} turns != fleet ${scope.wantAllTurns}`);
+        scopeProblems.push(`merged ${scope.all.turns} turns != fleet ${scope.wantAllTurns}`);
       if (Math.abs(scope.all.cost - scope.wantAllCost) > 0.05)
         scopeProblems.push(`merged cost ${scope.all.cost} != fleet ${scope.wantAllCost}`);
-      if (Math.abs(scope.all.model - scope.wantAllModel) > 0.02)
+      if (scope.wantAllModel !== null && Math.abs(scope.all.model - scope.wantAllModel) > 0.02)
         scopeProblems.push(`merged model ${scope.all.model} h != union ${scope.wantAllModel.toFixed(2)} h`);
-      if (scope.all.req <= scope.self.req)
-        scopeProblems.push('merged scope is not larger than the local one');
-      if (scope.self.sub === scope.all.sub)
-        scopeProblems.push('the caption does not change with the scope');
-      if (/this store/.test(scope.all.sub))
-        scopeProblems.push('merged view still says "this store"');
+      if (/this store|this repository|this one/i.test(scope.all.sub))
+        scopeProblems.push('merged caption still says "this store/this repository/this one"');
+
+      if (scope.main) {
+        if (!scope.main.values.every(v => v === scope.mainKey))
+          scopeProblems.push(`selectors out of sync: ${scope.main.values.join(',')}`);
+        if (scope.main.req !== scope.wantMainReq)
+          scopeProblems.push(`main scope ${scope.main.req} req != session ${scope.wantMainReq}`);
+        if (!scope.main.planHidden)
+          scopeProblems.push('plan card warns on the repository it CAN serve');
+        if (!scope.main.outHidden)
+          scopeProblems.push('outputs card warns on the repository it CAN serve');
+      }
+      if (scope.sib) {
+        if (!scope.sib.values.every(v => v === scope.sibKey))
+          scopeProblems.push(`selectors out of sync: ${scope.sib.values.join(',')}`);
+        if (scope.sib.req === scope.all.req)
+          scopeProblems.push('the selector changes nothing - one repository reads as all of them');
+        if (scope.sib.planHidden)
+          scopeProblems.push('plan card does not admit it has no plan for a sibling');
+        if (scope.sib.outHidden)
+          scopeProblems.push('outputs card does not admit what it could not measure');
+        if (!/not measured/i.test(scope.sib.outStats))
+          scopeProblems.push('unmeasured output columns are not labelled "not measured"');
+        if (scope.main && scope.sib.outStats === scope.main.outStats)
+          scopeProblems.push('SILENT FALLBACK: sibling shows the main repository\'s output figures');
+        if (!scope.sib.outSub.includes(scope.sibKey))
+          scopeProblems.push('outputs caption does not name the selected repository');
+      }
     }
+
+    // --- one date format ------------------------------------------------------
+    // The page carried three at once. Two of them ("1/8", "Aug 1, 2026") are
+    // ambiguous or locale-bound, so a reader had to work out the convention per
+    // panel before comparing two numbers.
+    const dates = await page.evaluate(() => {
+      const CANON = /\b\d{1,2}-(January|February|March|April|May|June|July|August|September|October|November|December)-\d{4}\b/g;
+      const t = document.body.innerText;
+      return {
+        good: (t.match(CANON) || []).length,
+        iso: (t.match(/\b\d{4}-\d{2}-\d{2}\b/) || [])[0] || null,
+        us: (t.match(/\b[A-Z][a-z]{2} \d{1,2}, \d{4}\b/) || [])[0] || null,
+        slash: (t.match(/\b(Mon|Tue|Wed|Thu|Fri|Sat|Sun) \d{1,2}\/\d{1,2}\b/) || [])[0] || null,
+        labels: [...document.querySelectorAll('#dayBars .bar .lab')].map(e => e.textContent.trim()),
+        clipped: [...document.querySelectorAll('#dayBars .bar .lab')]
+                   .filter(e => e.scrollWidth > e.clientWidth + 1).length,
+      };
+    });
+    const dateProblems = [];
+    if (dates.iso) dateProblems.push(`bare ISO date on the page: ${dates.iso}`);
+    if (dates.us) dateProblems.push(`US short-month date on the page: ${dates.us}`);
+    if (dates.slash) dateProblems.push(`ambiguous numeric date on the page: ${dates.slash}`);
+    if (dates.labels.length && !dates.labels.every(l =>
+        /^\d{1,2}-(January|February|March|April|May|June|July|August|September|October|November|December)-\d{4}$/.test(l)))
+      dateProblems.push(`day labels are not canonical: ${dates.labels.slice(0, 2).join(' | ')}`);
+    if (dates.clipped)
+      dateProblems.push(`${dates.clipped} day labels are truncated by their column`);
+    if (dates.good < 5)
+      dateProblems.push(`only ${dates.good} canonical dates rendered - is the formatter wired up?`);
 
     // --- the plan card ------------------------------------------------------
     // The panel that must NOT be trusted just because it rendered. Three things
@@ -342,6 +421,7 @@ function resolve(arg) {
                r.empty.length === 0 && r.nan.length === 0 && r.leaked.length === 0 &&
                r.hasWithdrawn && r.theme === theme && dayProblems.length === 0 &&
                fleetProblems.length === 0 && scopeProblems.length === 0 &&
+               dateProblems.length === 0 &&
                planProblems.length === 0;
     if (!ok) fail++;
     console.log(`--- ${theme} --- ${ok ? 'PASS' : 'FAIL'}`);
@@ -365,9 +445,13 @@ function resolve(arg) {
       console.log(`  pooled-vs-per-machine: +${(fleet.bridged_s/60).toFixed(1)} min bridged`);
     if (fleetProblems.length) console.log('  FLEET ' + fleetProblems.join(' | '));
     if (!scope.absent)
-      console.log(`  scope: local ${scope.self.req} req/${scope.self.turns} turns, ` +
-                  `merged ${scope.all.req} req/${scope.all.turns} turns`);
+      console.log(`  scope: ${scope.offered[0].split(',').length} repositories, ` +
+                  `all=${scope.all.req} req` +
+                  (scope.main ? `, ${scope.mainKey}=${scope.main.req} req` : '') +
+                  (scope.sib ? `, ${scope.sibKey}=${scope.sib.req} req` : ''));
     if (scopeProblems.length) console.log('  SCOPE ' + scopeProblems.join(' | '));
+    console.log(`  dates: ${dates.good} canonical, 0 legacy formats`);
+    if (dateProblems.length) console.log('  DATES ' + dateProblems.join(' | '));
     if (!plan.absent && !plan.missingCard)
       console.log(`  plan: ${plan.rows} day rows, ${plan.writtenSum} todos, ` +
                   `${plan.unplannedRows} unplanned days, rate-withheld=${plan.saysNoRate}`);

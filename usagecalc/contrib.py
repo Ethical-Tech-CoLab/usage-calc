@@ -165,6 +165,17 @@ def fleet(primary_label, primary_meta, primary_events, contribs):
             "days": len({dt.datetime.fromtimestamp(e["ts"]).astimezone().date()
                          for e in evs}),
             "models": sorted({e["model"] for e in evs}),
+            # Day rows for THIS repository alone, so the page can offer a
+            # per-repository scope instead of only all-or-primary.
+            #
+            # These do not add up to the merged rows and must never be
+            # presented as if they did. Cost and requests would sum correctly,
+            # but engaged time is cut into sittings over this repository's
+            # stream ALONE, so a pause spent in a sibling repository reads as
+            # idle here and as engaged there. The merged view cuts the pooled
+            # stream, which is the only reading that matches one person. The
+            # difference is published on the page as the bridged figure.
+            "day_rows": daily(evs, merged_turns(evs)),
         })
         all_events.extend(evs)
         all_busy.extend(busy)

@@ -1,4 +1,4 @@
-"""Assemble the whole payload, and write it into the template.
+﻿"""Assemble the whole payload, and write it into the template.
 
 This is the top of the package: it reads the store, derives everything, and
 returns one JSON-serialisable dict. The dashboard is that dict plus a template
@@ -30,7 +30,7 @@ MARKER = "/*USAGE*/"
 # reaches nobody, and a page that cannot render a panel looks exactly like a
 # page that has nothing to show. The version is compared on every build so a
 # stale page says so out loud instead.
-TEMPLATE_VERSION = 2
+TEMPLATE_VERSION = 3
 VERSION_MARK = "usage-calc-template:"
 
 NOT_MEASURED = [
@@ -89,6 +89,16 @@ def build(root=None, db=None, session=None, cwd=None, config=None):
     # Deriving a second set of day boundaries here would let the two disagree
     # by a day at every evening edge and nothing would look wrong.
     plan = todo_summary(sid, work_days={r["date"]: r["requests"] for r in day_rows})
+
+    main_label = (sess["repository"]
+                  or os.path.basename(str(sess["cwd"]).rstrip("\\/"))
+                  or cfg["title"]).split("/")[-1]
+    fleet_data = fleet(main_label,
+                       {"machine": None, "repository": sess["repository"],
+                        "session": sid},
+                       events, contribs)
+    sibs = siblings(cfg)
+    outs = outputs(root)
 
     return {
         "schema": SCHEMA,
@@ -153,17 +163,124 @@ def build(root=None, db=None, session=None, cwd=None, config=None):
         "agents": agents,
         "turns": turns,
         "counterfactual": counterfactual(events),
-        "fleet": fleet(
-            (sess["repository"]
-             or os.path.basename(str(sess["cwd"]).rstrip("\\/"))
-             or cfg["title"]).split("/")[-1],
-            {"machine": None, "repository": sess["repository"], "session": sid},
-            events, contribs),
-        "siblings": siblings(cfg),
+        "fleet": fleet_data,
+        "siblings": sibs,
+        "scopes": _scopes(main_label, day_rows, fleet_data, sibs, outs),
         "energy": energy(len(events)),
         "catalogue": offered_models({e["model"] for e in events}),
-        "outputs": outputs(root),
+        "outputs": outs,
         "not_measured": NOT_MEASURED,
+    }
+
+
+def _scopes(main_label, day_rows, fleet_data, sibs, outs):
+    """One list of selectable repositories, so every control agrees.
+
+    The page had two half-scopes before this: a day chart that offered "this
+    repository / all repositories", and several panels that were silently one
+    or the other with only the prose to tell them apart. Prose is not a
+    control. A reader had to know which panel meant which, and "this one" only
+    means anything to someone who already knows where the page was generated.
+
+    So the scopes are built ONCE, here, and every panel is handed the same
+    list. Each entry declares what it actually has, because the answer differs
+    per panel and per repository:
+
+        usage   spend and time - present for every repository that exported
+        days    day-by-day rows - same
+        plan    the todo list - PRIMARY ONLY. It lives in the session state of
+                the machine the session ran on; a contribution file carries no
+                todos and inventing them is not an option.
+        output  commits, lines, words - full only where there is a checkout.
+                Siblings get commits and dates from the API and nothing else.
+
+    A panel that cannot honour a selection says so and shows what it has. It
+    must never quietly fall back to the primary repository's numbers under
+    another repository's name.
+    """
+    if not fleet_data:
+        return None
+
+    by_project = {}
+    for r in fleet_data.get("sources") or []:
+        by_project[r["project"]] = r
+
+    sib_by_name = {}
+    for r in ((sibs or {}).get("rows") or []):
+        sib_by_name[r["name"]] = r
+
+    entries = [{
+        "key": "all",
+        "label": "All repositories",
+        "kind": "all",
+        "usage": True,
+        "days": bool(fleet_data.get("days")),
+        "plan": False,
+        # Commits are known for every repository - they come from GitHub, not
+        # from a checkout - so a summed commit count is real. Lines, words and
+        # files are not, and the panel says which is which rather than adding
+        # a number that only covers one repository to a label that says all.
+        "output": "commits",
+        "requests": (fleet_data.get("totals") or {}).get("requests"),
+        "usd": (fleet_data.get("totals") or {}).get("usd"),
+    }]
+
+    for name, r in sorted(by_project.items(),
+                          key=lambda kv: (not kv[1].get("primary"),
+                                          -kv[1].get("nano_aiu", 0))):
+        sib = sib_by_name.get(name)
+        primary = bool(r.get("primary"))
+        entries.append({
+            "key": name,
+            "label": name + (" (main)" if primary else ""),
+            "kind": "main" if primary else "sibling",
+            "usage": True,
+            "days": bool(r.get("day_rows")),
+            "plan": primary,
+            # Only the repository this page was generated in has a working
+            # tree to count. Everything else gets what GitHub will answer.
+            "output": "full" if primary else ("commits" if sib else False),
+            "requests": r.get("requests"),
+            "usd": r.get("usd"),
+            "machine": r.get("machine"),
+            "commits": (outs or {}).get("commit_count") if primary
+                       else (sib or {}).get("commits"),
+            "first_commit": (sib or {}).get("first_commit") if not primary else None,
+            "last_commit": (sib or {}).get("last_commit") if not primary else None,
+        })
+
+    # A repository named as a sibling that never exported its usage still
+    # belongs in the list. Leaving it out would make the selector agree with
+    # the totals and disagree with the project.
+    for name, sib in sorted(sib_by_name.items()):
+        if name in by_project:
+            continue
+        entries.append({
+            "key": name, "label": name, "kind": "sibling",
+            "usage": False, "days": False, "plan": False,
+            "output": "commits", "requests": None, "usd": None,
+            "commits": sib.get("commits"),
+            "first_commit": sib.get("first_commit"),
+            "last_commit": sib.get("last_commit"),
+        })
+
+    known = [e.get("commits") for e in entries[1:] if e.get("commits")]
+    entries[0]["commits"] = sum(known) if known else None
+    entries[0]["commits_partial"] = any(
+        not e.get("commits") for e in entries[1:])
+
+    return {
+        "main": main_label,
+        "default": "all",
+        "entries": entries,
+        "note": (
+            "Selecting one repository shows that repository's own stream. Cost "
+            "and requests add up across selections; TIME DOES NOT. Engaged time "
+            "is cut into sittings over whichever stream is selected, so a pause "
+            "spent in a sibling repository reads as idle in one and as work in "
+            "the other. Only the merged view cuts the pooled stream, which is "
+            "the reading that matches one person."
+        ),
     }
 
 

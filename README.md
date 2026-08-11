@@ -233,6 +233,91 @@ overlapping-sittings bug was found.
 
 ---
 
+## One repository selector, and what each panel can actually serve
+
+Once a second machine contributes, the page describes more than one repository,
+and a card headlined with one scope beside a card headlined with another is
+unreadable — a reader has no way to tell whether two numbers disagree because
+the work differed or because the panels did.
+
+So the scopes are built once, in `_scopes()`, and **every panel is handed the
+same list**: `All repositories`, the primary repository, and each sibling.
+Changing any selector changes them all.
+
+The interesting part is that the panels do **not** all have the same data, and
+each entry says so rather than guessing:
+
+| capability | who has it | why not everyone |
+|---|---|---|
+| `usage` | every repository that exported | — |
+| `days` | same | — |
+| `plan` | **the primary repository only** | todos live in the session state of the machine the session ran on; a contribution file carries none |
+| `output` | `full` for the primary, `commits` for a sibling with a GitHub row, `false` otherwise | lines, words and files need a checkout; commits come from the API |
+
+A panel that cannot honour a selection **says so and shows what it has**. It must
+never fall back to the primary repository's numbers under another repository's
+name — that renders as an ordinary card full of plausible figures and there is
+nothing on the page to suggest anything is wrong. `verify_usage.js` asserts the
+negative case directly, and the assertion is proved to fail against a
+deliberately broken page rather than assumed to work.
+
+Two consequences worth stating on the page, because both are counter-intuitive:
+
+- **Cost and requests add across repositories. Time does not.** Engaged time is
+  cut into sittings over whichever stream is selected, so a pause spent in a
+  sibling reads as idle in one view and as work in the other. Only the merged
+  view cuts the *pooled* stream, which is the reading that matches one person.
+- **`All` may report a summed commit count and may not report a line count.**
+  Commits are known for every repository; lines are known for one. A number
+  covering one repository under a label covering five is the same
+  label/number mismatch the glance band was corrected for.
+
+### One date format
+
+`10-August-2026`, everywhere on the page, from one formatter. `Aug 10, 2026` is
+locale-bound, `10/8` is ambiguous between two continents, and a bare ISO stamp is
+precise and unreadable. The weekday survives in each bar's tooltip, where it
+cannot become a second format. The verifier greps the rendered text for the
+legacy forms and fails on any of them.
+
+---
+
+## Upgrading the template on a page you have customised
+
+`build` splices only the payload by default, which is what preserves a project's
+own masthead, navigation and prose. It also means **a new panel in a newer
+template never reaches an existing page**, so `build` compares
+`<!--usage-calc-template:N-->` against the packaged version and prints a note
+when they differ.
+
+**Do not resolve that note with `--fresh` on a page you have edited.** `--fresh`
+renders the packaged template over the target and discards every hand-written
+section, the masthead and the navigation. The failure is not loud; you get a
+clean, working, generic page.
+
+Take the new template as a three-way merge instead, with the *previous* template
+as the base:
+
+```bash
+# base: the template version your page was last built from
+git -C /path/to/usage-calc show <old-sha>:usagecalc/templates/dashboard.html > base.html
+cp usage/usage-dashboard.html ours.html
+cp "$(python -c 'import usagecalc,os;print(os.path.join(os.path.dirname(usagecalc.__file__),"templates","dashboard.html"))')" theirs.html
+
+git merge-file -p --diff3 ours.html base.html theirs.html > merged.html
+# resolve any conflict markers, then:
+cp merged.html usage/usage-dashboard.html
+usage-calc build
+```
+
+Conflicts land only where you edited the same lines the template changed, which
+is exactly the set a human should look at. Afterwards, count your project's own
+markers (masthead elements, nav entries, your own section ids) and confirm they
+match what they were before the merge — that check is what distinguishes a merge
+from a quiet overwrite.
+
+---
+
 ## What is retained, and what that does not establish
 
 Observed on a real store: rows go back to the first request of the oldest
@@ -325,6 +410,9 @@ a build against an older page says so:
 ```
 NOTE: usage-dashboard.html was built from template v1; the installed template is v2.
 ```
+
+Take the new template with `git merge-file`, not with `--fresh` — see
+[Upgrading the template on a page you have customised](#upgrading-the-template-on-a-page-you-have-customised).
 
 ---
 

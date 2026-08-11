@@ -134,16 +134,23 @@ def siblings(cfg):
     for n in names:
         full = "%s/%s" % (owner, n) if owner and "/" not in n else n
         row = {"repo": full, "name": n.split("/")[-1], "commits": None,
-               "first_commit": None, "last_commit": None, "reachable": False}
+               "first_commit": None, "last_commit": None, "reachable": False,
+               "truncated": False}
         try:
-            raw = subprocess.run(["gh", "api", "repos/%s/commits?per_page=100" % full],
-                                 capture_output=True, text=True, timeout=30)
+            # --paginate, because a single page CAPS AT 100 and returns exactly
+            # 100 for a repository with more. That is the worst shape of wrong
+            # number: plausible, round, and silently too small forever. The cap
+            # is still recorded below in case pagination itself is limited.
+            raw = subprocess.run(
+                ["gh", "api", "--paginate", "repos/%s/commits?per_page=100" % full],
+                capture_output=True, text=True, timeout=90)
             if raw.returncode == 0:
-                cs = json.loads(raw.stdout)
-                if isinstance(cs, list) and cs:
+                cs = _json_stream(raw.stdout)
+                if cs:
                     ds = sorted(c["commit"]["author"]["date"] for c in cs)
                     row.update(commits=len(cs), first_commit=ds[0],
-                               last_commit=ds[-1], reachable=True)
+                               last_commit=ds[-1], reachable=True,
+                               truncated=(len(cs) % 100 == 0))
         except Exception:
             pass
         rows.append(row)
@@ -164,7 +171,45 @@ def siblings(cfg):
             "a whole, and an exact figure only for the repository it was "
             "generated in."
         ),
+        # Why the per-repository output view stops at commits. GitHub's
+        # stats/contributors endpoint does return additions and deletions in a
+        # single call, and it was tested: on one of these repositories it
+        # reported 33 commits where the authoritative commit list reports 20.
+        # The line counts belong to whichever set of commits that endpoint is
+        # actually counting, and that cannot be established from here. So they
+        # are not published. Lines, words and files for a sibling need a
+        # checkout, and this page does not have one.
+        "outputs_note": (
+            "Commits and dates for the other repositories come from GitHub. "
+            "Lines changed, words written and file counts do not: they are "
+            "read from a local checkout, and only this repository is checked "
+            "out here. The API endpoint that reports lines disagreed with the "
+            "commit list by two thirds on a test repository, so it is not "
+            "used. Those cells are marked as not measured rather than shown "
+            "as zero."
+        ),
     }
+
+
+def _json_stream(text):
+    """Concatenated JSON arrays, as `gh api --paginate` emits them.
+
+    Pagination writes one array per page, so the output is `[...][...]` and is
+    not a single JSON document. json.loads on the whole thing raises, and the
+    original single-page code would then have silently kept the last good
+    value - a count that stops growing and never says why.
+    """
+    dec = json.JSONDecoder()
+    out, i = [], 0
+    while i < len(text):
+        while i < len(text) and text[i].isspace():
+            i += 1
+        if i >= len(text):
+            break
+        val, i = dec.raw_decode(text, i)
+        if isinstance(val, list):
+            out.extend(val)
+    return out
 
 
 def outputs(root):

@@ -1,5 +1,5 @@
 <!doctype html>
-<!--usage-calc-template:2-->
+<!--usage-calc-template:3-->
 <html lang="en">
 <head>
 <meta charset="utf-8">
@@ -90,6 +90,7 @@ h2 {
   font-size: 1.35rem; margin: 0 0 4px; letter-spacing: -0.01em;
 }
 .sub { color: var(--cp-text-muted); margin: 0 0 6px; max-width: 74ch; }
+.nb { white-space: nowrap; }
 .crumb { font-size: 0.82rem; color: var(--cp-text-soft); margin-bottom: 14px; }
 .crumb a { color: var(--cp-link); text-decoration: none; }
 .crumb a:hover { text-decoration: underline; }
@@ -395,8 +396,8 @@ h3 { font-size: 1rem; margin: 22px 0 6px; }
     <h2>Day by day</h2>
     <p class="sub" id="daysub"></p>
     <div class="daykey">
-      <label>Scope
-        <select id="dayScope"></select>
+      <label>Repository
+        <select id="dayScope" class="repoScope" data-need="days"></select>
       </label>
       <label>A pause stops counting after
         <select id="dayCut"></select>
@@ -412,6 +413,12 @@ h3 { font-size: 1rem; margin: 22px 0 6px; }
   <div class="card" id="plancard" hidden>
     <h2>How much of this was planned</h2>
     <p class="sub" id="plansub"></p>
+    <div class="daykey">
+      <label>Repository
+        <select id="planScope" class="repoScope" data-need="plan"></select>
+      </label>
+    </div>
+    <div class="note warn" id="planscopenote" hidden></div>
     <div class="stats" id="planhero"></div>
     <div class="scroll" style="margin-top:20px"><table id="planTable"></table></div>
     <div class="note" id="plannote"></div>
@@ -459,11 +466,17 @@ h3 { font-size: 1rem; margin: 22px 0 6px; }
 
   <div class="card">
     <h2>The other half of the ledger</h2>
-    <p class="sub">What the repository has to show for it. Counted, not appraised.</p>
+    <p class="sub" id="outsub"></p>
+    <div class="daykey">
+      <label>Repository
+        <select id="outScope" class="repoScope" data-need="output"></select>
+      </label>
+    </div>
+    <div class="note warn" id="outscopenote" hidden></div>
     <div class="stats" id="outStats"></div>
     <div class="scroll" style="margin-top:20px"><table id="perUnit"></table></div>
     <div class="note warn"><strong>Volume is not value.</strong> Every figure above is a
-      count of output, and this repository&rsquo;s own record argues against reading counts as
+      count of output, and this project&rsquo;s own record argues against reading counts as
       worth: several of its most useful moments were <em>withdrawals</em>, which reduce the
       word count and improve the work. A ratio of dollars to words prices typing. Nothing
       here prices whether the study is any good.</div>
@@ -499,7 +512,7 @@ h3 { font-size: 1rem; margin: 22px 0 6px; }
       work is unmeasurable because nobody records it. It was wrong, and it was wrong in the
       flattering direction: an absence of evidence is a much easier thing to publish than
       a ledger that can be checked. The correction stays visible for the same reason every
-      other withdrawal in this repository does.</div>
+      other withdrawal in this project does.</div>
   </div>
 
   <footer>
@@ -550,11 +563,55 @@ function bars(el, items) {
 // generator cuts on the machine's own midnight and reports which zone it used,
 // so the label below is read from the data rather than assumed.
 const DAYNAMES = ["Sun","Mon","Tue","Wed","Thu","Fri","Sat"];
+const DAYNAMES_FULL = ["Sunday","Monday","Tuesday","Wednesday","Thursday",
+                       "Friday","Saturday"];
+
+// ONE DATE FORMAT ON THE WHOLE PAGE: 10-August-2026.
+//
+// The page previously carried three at once - "Sat 1/8" on the day chart,
+// "Aug 1, 2026" in the header band and a bare "2026-08-01" in tables. Two of
+// those are ambiguous to half the world (1/8 is the first of August or the
+// eighth of January depending on where the reader is), and mixing them means
+// a reader has to work out which convention each panel is using before they
+// can compare two numbers. The month is spelled out so it cannot be misread.
+const MONTHS = ["January", "February", "March", "April", "May", "June", "July",
+                "August", "September", "October", "November", "December"];
+
+function fmtDate(iso) {
+  if (!iso) return "\u2014";
+  const p = String(iso).slice(0, 10).split("-").map(Number);
+  if (!(p[0] && p[1] && p[2]) || p[1] < 1 || p[1] > 12) return "\u2014";
+  return p[2] + "-" + MONTHS[p[1] - 1] + "-" + p[0];
+}
+
+// The weekday is genuinely useful on a day chart - it is how a person
+// remembers a working week - so it survives, in the tooltip, where it cannot
+// become a second date format.
+function fmtDateLong(iso) {
+  if (!iso) return "";
+  const p = String(iso).slice(0, 10).split("-").map(Number);
+  const d = new Date(p[0], p[1] - 1, p[2]);
+  return DAYNAMES_FULL[d.getDay()] + ", " + fmtDate(iso);
+}
 
 function dayLabel(iso) {
-  const p = iso.split("-").map(Number);
-  const d = new Date(p[0], p[1] - 1, p[2]);
-  return DAYNAMES[d.getDay()] + " " + p[2] + "/" + p[1];
+  return fmtDate(iso);
+}
+
+// A date carries two hyphens, and a browser will happily wrap at either of
+// them, which turns 11-August-2026 into two lines that each look like a date.
+function dateRange(a, b) {
+  return '<span class="nb">' + esc(fmtDate(a)) + '</span> to ' +
+         '<span class="nb">' + esc(fmtDate(b)) + '</span>';
+}
+
+// The generator stamp is the one place a time of day is worth printing, and
+// it was the last ISO-8601 string left rendering raw on the page.
+function fmtStamp(iso) {
+  if (!iso) return "\u2014";
+  const s = String(iso);
+  const t = s.slice(11, 16);
+  return fmtDate(s) + (t ? " at " + t + (s.endsWith("Z") ? " UTC" : "") : "");
 }
 
 // -- the rest of the project -------------------------------------------------
@@ -571,15 +628,120 @@ function dayLabel(iso) {
 // working todo list is always about 100% - a session closes items as it goes,
 // so nothing abandoned is left sitting there to pull the number down. A metric
 // that reads 100% for everybody measures nothing, so it is not shown at all.
+// --- the repository selector, shared by every panel that has one ------------
+//
+// One list, built once by the generator, mounted into every <select
+// class="repoScope"> on the page. Changing any one of them changes all of
+// them, because a page where the day chart says one repository and the
+// ledger beside it says another is a page that cannot be read.
+//
+// The headline band is deliberately NOT wired to this. It is the project
+// total and it should not move when somebody looks at one repository.
+//
+// Each entry declares what it has. A panel whose selection it cannot serve
+// says so and shows what it does have. It never falls back silently, because
+// the primary repository's numbers under a sibling's name is the one failure
+// here that would look completely normal.
+const SC = DATA.scopes || null;
+const MAIN = SC ? SC.main : "the main repository";
+let SCOPE = SC ? SC.default : "all";
+const SCOPE_PAINTERS = [];
+
+function scopeOf(key) {
+  if (!SC) return null;
+  return SC.entries.find(e => e.key === (key === undefined ? SCOPE : key)) || null;
+}
+function scopeName(key) {
+  const e = scopeOf(key);
+  if (!e) return SC ? SC.main : "this repository";
+  return e.kind === "all" ? "every repository in the project" : e.key;
+}
+// What a panel should actually show, given what the reader picked and what
+// this panel can serve. Returns the served key plus a note when they differ.
+function resolveScope(need) {
+  const want = scopeOf();
+  if (!want) return {key: SCOPE, entry: null, served: true, note: ""};
+  if (want[need]) return {key: want.key, entry: want, served: true, note: ""};
+  const fallback = SC.entries.find(e => e[need]);
+  return {
+    key: fallback ? fallback.key : null,
+    entry: fallback || null,
+    served: false,
+    note: want.label
+  };
+}
+function mountScopes() {
+  const sels = Array.prototype.slice.call(document.querySelectorAll(".repoScope"));
+  if (!SC || SC.entries.length < 2) {
+    // One repository, or a payload predating the selector. An empty dropdown
+    // is worse than none, so the control is removed rather than left blank.
+    sels.forEach(sel => {
+      const l = sel.closest("label") || sel.parentElement;
+      if (l) l.style.display = "none";
+    });
+    return;
+  }
+  sels.forEach(sel => {
+    const need = sel.dataset.need;
+    sel.innerHTML = SC.entries.map(e =>
+      `<option value="${esc(e.key)}"${e.key === SCOPE ? " selected" : ""}>` +
+      esc(e.label) + (e[need] ? "" : " \u2014 not available") + "</option>"
+    ).join("");
+    sel.onchange = () => { SCOPE = sel.value; repaintScopes(); };
+  });
+}
+function repaintScopes() {
+  document.querySelectorAll(".repoScope").forEach(s => { s.value = SCOPE; });
+  SCOPE_PAINTERS.forEach(fn => fn());
+}
+// Day rows for one selection. Merged rows come from the fleet; a single
+// repository's come from its own contribution, which is why contrib.py keeps
+// them. They do not sum to the merged rows and the panel says why.
+function daysFor(key) {
+  const base = DATA.days;
+  if (!base) return null;
+  const shell = r => ({zone: base.zone, cutoffs: base.cutoffs,
+                       default_cutoff_s: base.default_cutoff_s, rows: r,
+                       person_note: base.person_note});
+  const F = DATA.fleet;
+  if (key === "all") return (F && F.days && F.days.length) ? shell(F.days) : shell(base.rows);
+  const src = F && (F.sources || []).find(s => s.project === key);
+  if (src && src.day_rows && src.day_rows.length) return shell(src.day_rows);
+  return null;
+}
+
 function renderPlan() {
   const P = DATA.plan, card = $("plancard");
   if (!card) return;
   if (!P) return;                      // this session kept no list; say nothing
   card.hidden = false;
 
+  // The plan is primary-only and cannot be anything else: todos live in the
+  // session state of the machine a session ran on, and a contribution file
+  // carries none. So this panel answers for one repository whatever the
+  // reader picks, and it says which one rather than letting the selector
+  // above imply otherwise.
+  const planFor = SC ? (SC.entries.find(e => e.plan) || null) : null;
+  const planNote = $("planscopenote");
+  SCOPE_PAINTERS.push(function () {
+    if (!planNote) return;
+    const r = resolveScope("plan");
+    if (r.served) { planNote.hidden = true; planNote.innerHTML = ""; return; }
+    planNote.hidden = false;
+    planNote.innerHTML =
+      `<strong>No plan was recorded for ${esc(r.note)}.</strong> A todo list ` +
+      `lives in the session state of the machine its session ran on, and the ` +
+      `usage export deliberately carries no todo text, so there is nothing to ` +
+      `read for any repository but ` +
+      `<strong>${esc(planFor ? planFor.key : (SC ? SC.main : "the primary one"))}</strong>. ` +
+      `The figures below are that repository's, and they have not been ` +
+      `relabelled to look like anyone else's.`;
+  });
+
   const c = P.coverage, lt = P.lifetime;
   $("plansub").innerHTML =
-    `The session kept its own todo list &mdash; <b>${n0(P.total)}</b> items with ` +
+    `The session that produced <b>${esc(MAIN)}</b> kept its own todo list ` +
+    `&mdash; <b>${n0(P.total)}</b> items with ` +
     `<b>${n0(P.deps.edges)}</b> dependency edges across ${n0(P.deps.todos)} of them. ` +
     `What follows is how much of the <em>billed</em> work happened on a day that ` +
     `had a plan written for it.`;
@@ -630,7 +792,7 @@ function renderPlan() {
     `halved the median and the figure would have been a fiction. ` +
     (c && c.unplanned_days.length
       ? `<b>The unplanned days are the finding</b>, not a defect: ` +
-        `${c.unplanned_days.join(", ")} carried ` +
+        `${c.unplanned_days.map(fmtDate).join(", ")} carried ` +
         `${n0(c.requests_total - c.requests_planned)} billed requests with no plan ` +
         `written. That is where unplanned spend hides.`
       : ``);
@@ -719,69 +881,70 @@ function renderFleet() {
   ], S.rows.map(r => ({
     name: r.name,
     commits: r.commits === null ? "\u2014" : n0(r.commits),
-    first: r.first_commit ? r.first_commit.slice(0, 10) : "\u2014",
-    last: r.last_commit ? r.last_commit.slice(0, 10) : "\u2014",
+    first: fmtDate(r.first_commit),
+    last: fmtDate(r.last_commit),
     requests: "not measured", cost: "not measured",
   })));
   note.innerHTML = `<b>Every total on this page is a floor for the project and an ` +
-    `exact figure only for this repository.</b> ${esc(S.why)}` +
+    `exact figure only for <b>${esc(MAIN)}</b>.</b> ${esc(S.why)}` +
     (known ? ` Commit counts were read from GitHub on ` +
-      `${esc(S.fetched.slice(0, 10))}; the spend cannot be read the same way, which ` +
+      `${esc(fmtDate(S.fetched))}; the spend cannot be read the same way, which ` +
       `is why one column here is a number and the next two are an admission.` : "");
 }
 
 function renderDays() {
-  // TWO SCOPES, AND THE DIFFERENCE BETWEEN THEM IS THE POINT. This repository's
-  // days are read from the local store. The merged days include the sibling
-  // repositories, whose usage was exported from another machine. On the day
-  // those repositories were built the two differ by two orders of magnitude,
-  // so showing only the local view would misdescribe the day badly - and
-  // showing only the merged view would hide which part is first-hand.
-  const scope = $("dayScope");
-  const F = DATA.fleet;
-  const VIEWS = [{key: "self", label: "this repository", days: DATA.days}];
-  if (F && F.days && F.days.length) {
-    VIEWS.push({key: "all", label: "all repositories", days: {
-      zone: DATA.days.zone, cutoffs: DATA.days.cutoffs,
-      default_cutoff_s: DATA.days.default_cutoff_s, rows: F.days,
-    }});
-  }
-  if (scope) {
-    scope.innerHTML = VIEWS.map((v, i) =>
-      `<option value="${i}"${i === VIEWS.length - 1 ? " selected" : ""}>${esc(v.label)}</option>`
-    ).join("");
-    scope.style.display = VIEWS.length > 1 ? "" : "none";
-    scope.parentElement.style.display = VIEWS.length > 1 ? "" : "none";
-  }
-
-  function view() { return VIEWS[Math.min(scope ? +scope.value : 0, VIEWS.length - 1)]; }
-
+  // The selector is shared with the other panels, so this function no longer
+  // owns a scope of its own. What it owns is the consequence: cost and
+  // requests add across repositories and TIME DOES NOT, because a sitting is
+  // cut over whichever stream is selected. A pause spent in a sibling reads
+  // as idle in one view and as work in the other, and only the merged view
+  // cuts the pooled stream. That is stated in the caption, not buried here.
   function paint() {
-    const V = view();
-    drawDays(V.days, V.key === "all", VIEWS.length > 1);
+    const r = resolveScope("days");
+    const D = daysFor(r.key);
+    drawDays(D, r.key === "all", r.key, r.served ? "" : r.note);
   }
-  if (scope) scope.onchange = paint;
+  SCOPE_PAINTERS.push(paint);
   paint();
 }
 
-function drawDays(D, merged, hasScope) {
-  if (!D || !D.rows || !D.rows.length) return;
-  const rows = D.rows, sel = $("dayCut");
+function drawDays(D, merged, key, unserved) {
+  const bars = $("dayBars"), tab = $("dayTable"), sel = $("dayCut");
+  if (!D || !D.rows || !D.rows.length) {
+    if (bars) bars.innerHTML = "";
+    if (tab) tab.innerHTML = "";
+    $("daysub").innerHTML = "No day-by-day rows were exported for " +
+      esc(unserved || scopeName(key)) + ".";
+    $("daynote").innerHTML = "";
+    return;
+  }
+  const rows = D.rows;
 
   $("daysub").innerHTML =
     "Each row is one calendar day in <strong>" + esc(D.zone.name) + "</strong> (UTC" +
     esc(D.zone.utc_offset) + "), the zone the work happened in. The bar splits an " +
     "engaged day into the part a model spent generating and the part it did not. " +
     "<strong>Only the first of those is measured.</strong>" +
-    (hasScope
-      ? (merged
-          ? " These rows cover every repository in the project, merged &mdash; time is a union, not a sum."
-          : " These rows cover this repository only.")
-      : "");
+    (merged
+      ? " These rows cover every repository in the project, merged &mdash; time is a union, not a sum."
+      : " These rows cover <strong>" + esc(key) + "</strong> alone. Cost and requests " +
+        "add up across repositories; <strong>time does not</strong>, because a sitting " +
+        "is cut over whichever stream is selected, and a pause spent in another " +
+        "repository reads as idle here and as work there. Only the merged view cuts " +
+        "the pooled stream.");
 
-  sel.innerHTML = D.cutoffs.map(c =>
-    `<option value="${c}"${c === D.default_cutoff_s ? " selected" : ""}>` +
-    (c >= 3600 ? (c/3600) + " h" : (c/60) + " min") + "</option>").join("");
+  // Rebuilt only when the option set actually changes, so switching
+  // repository does not silently reset the reader's cut-off choice.
+  const opts = D.cutoffs.map(c =>
+    `<option value="${c}">` + (c >= 3600 ? (c/3600) + " h" : (c/60) + " min") +
+    "</option>").join("");
+  if (sel.dataset.opts !== opts) {
+    const keep = sel.value;
+    sel.innerHTML = opts;
+    sel.dataset.opts = opts;
+    sel.value = (keep && D.cutoffs.indexOf(+keep) >= 0)
+      ? keep : String(D.default_cutoff_s);
+  }
 
   function draw() {
     const cut = String(sel.value);
@@ -796,7 +959,7 @@ function drawDays(D, merged, hasScope) {
       const m = x.engaged_s ? 100 * x.model_s / x.engaged_s : 0;
       return `
       <div class="bar">
-        <span class="lab" title="${esc(r.date)}">${esc(dayLabel(r.date))}</span>
+        <span class="lab" title="${esc(fmtDateLong(r.date))}">${esc(dayLabel(r.date))}</span>
         <span class="track"><span class="fill stack" style="width:${w.toFixed(2)}%">
           <i style="width:${m.toFixed(2)}%;background:var(--cp-accent)" title="model ${n2(x.model_s/3600)} h"></i>
           <i style="width:${(100-m).toFixed(2)}%;background:var(--cp-link)" title="person ${n2(x.person_s/3600)} h"></i>
@@ -818,7 +981,7 @@ function drawDays(D, merged, hasScope) {
     ], rows.map(r => {
       const x = t(r);
       return {
-        d: r.date, req: n0(r.requests), tn: n0(r.turns_started), cost: usd(r.usd),
+        d: fmtDate(r.date), req: n0(r.requests), tn: n0(r.turns_started), cost: usd(r.usd),
         eng: n2(x.engaged_s/3600), mod: n2(x.model_s/3600), per: n2(x.person_s/3600),
         share: x.engaged_s ? pct(x.person_s, x.engaged_s) : "\u2014",
         sit: n0(x.sittings)
@@ -858,7 +1021,7 @@ function drawDays(D, merged, hasScope) {
       `residual is ${n2(per/3600)} h of ${n2(eng/3600)} engaged &mdash; ` +
       `${pct(per, eng)}; across all four settings it runs from ` +
       `${n1(Math.min(...shares))}% to ${n1(Math.max(...shares))}%. The heaviest ` +
-      `day was ${esc(busiest.date)} at ${n2(t(busiest).engaged_s/3600)} h and ` +
+      `day was ${esc(fmtDate(busiest.date))} at ${n2(t(busiest).engaged_s/3600)} h and ` +
       `${usd(busiest.usd)}. ` +
       (modFlat
         ? `<strong>Notice what does not move.</strong> Model hours stay at ` +
@@ -869,7 +1032,7 @@ function drawDays(D, merged, hasScope) {
           `how long a pause has to be. That difference is the whole reason one ` +
           `of these columns is evidence and the other is an inference. `
         : "") +
-      `${esc(DATA.days.person_note.split(". ").slice(1).join(". ")
+      `${esc(D.person_note.split(". ").slice(1).join(". ")
               .replace("this store", merged ? "any of these stores" : "this store"))} ` +
       (merged
         ? `Across repositories these hours are a <em>union</em>, not a sum: at the ` +
@@ -898,12 +1061,7 @@ function renderBand() {
   // last-updated is the last COMMIT where one exists, not the last request -
   // a session can burn requests without publishing a line.
   const D = d.dates || {};
-  const day = iso => {
-    if (!iso) return "\u2014";
-    const p = String(iso).slice(0, 10).split("-").map(Number);
-    return new Date(p[0], p[1] - 1, p[2]).toLocaleDateString("en-US",
-      { year: "numeric", month: "short", day: "numeric" });
-  };
+  const day = fmtDate;   // ONE format on the page - see fmtDate
   const updated = D.last_commit || D.last_request;
 
   // WHEN THE LABEL SAYS FIVE REPOSITORIES, THE NUMBER BESIDE IT MUST COVER
@@ -947,7 +1105,7 @@ function renderBand() {
        : (active ? "over " + n1(T.wall_span_s / 3600) + " h of calendar"
                  : "not computed")],
     [n0(Math.round(bigTok / 1e6)) + "M", "tokens billed",
-     F ? n0(Math.round(allTokens / 1e6)) + "M of them in this repository"
+     F ? n0(Math.round(allTokens / 1e6)) + "M of them in " + MAIN
        : pct(tk.cache_read, allTokens) + " of them re-read from cache"],
     [n0(d.outputs.markdown_words), "words published",
      n0(d.outputs.commit_count) + " commits"]
@@ -1134,7 +1292,7 @@ function render() {
       `${n0(user.requests)} requests) and ${n1(comp.usd/sub.usd)} times all delegated ` +
       `sub-agent work put together (${usd(sub.usd)}). It is pure overhead: it produces no ` +
       `output anyone reads, and it is invisible in every account of this project except ` +
-      `this one. On a long-running session it is a first-class line item, and it is the ` +
+      `this page. On a long-running session it is a first-class line item, and it is the ` +
       `single strongest argument in this data for keeping sessions short and scoped.`;
   }
 
@@ -1255,24 +1413,91 @@ function render() {
     `The household comparison uses the US EIA figure: &ldquo;${esc(d.energy.household_source.locus)}&rdquo;`;
 
   // --- outputs -------------------------------------------------------------
+  // Full counts need a working tree, and there is exactly one of those. For
+  // every other repository GitHub will answer with commits and dates and
+  // nothing else, so lines, words and files are reported as NOT MEASURED
+  // rather than as zero. A zero here would read as "produced nothing".
   const o = d.outputs;
-  $("outStats").innerHTML = [
-    [n0(o.commit_count), "commits", o.commits.length ? o.commits[0].at.slice(0,10) + " to " + o.commits[o.commits.length-1].at.slice(0,10) : ""],
-    [n0(o.insertions), "lines added", n0(o.deletions) + " removed"],
-    [n0(o.tracked_files), "files tracked", n0(Math.round(o.bytes/1024)) + " KB"],
-    [n0(o.markdown_words), "words of prose", o.files_by_ext[".md"] + " markdown documents"],
-    [n0(o.files_by_ext[".html"] || 0), "HTML artifacts", "self-contained, no dependencies"],
-    [n0(o.files_by_ext[".py"] || 0), "Python scripts", "every figure regenerable"]
-  ].map(([b,s,e]) => `<div class="stat"><b>${b}</b><span>${s}</span><em>${e}</em></div>`).join("");
-  table($("perUnit"), [
-    {key:"m", label:"Unit rate"}, {key:"v", label:"Value", num:true}, {key:"c", label:"Read it with care"}
-  ], [
-    {m:"Cost per commit", v:usd(t.usd/o.commit_count), c:"Commits are not equal sized; three of these are rebuilds of a generated site."},
-    {m:"Cost per 1,000 published words", v:usd(1000*t.usd/o.markdown_words), c:"Counts prose only. Says nothing about whether the prose is correct."},
-    {m:"Cost per line added", v:"$" + (t.usd/o.insertions).toFixed(3), c:"Generated HTML dominates the line count, so this mostly prices a build script's output."},
-    {m:"Requests per turn", v:n1(t.requests/t.turns), c:"The agent issued this many model calls, on average, per thing that was asked for."},
-    {m:"Cost per user request", v:usd(t.usd/t.premium_requests), c:"What one typed instruction set in motion, at list prices."}
-  ]);
+  const sibRows = (d.siblings && d.siblings.rows) || [];
+  function drawOutputs() {
+    const r = resolveScope("output");
+    const e = r.entry;
+    const note = $("outscopenote");
+    const cap = e ? (e.output === "full" ? "full" : "commits") : "full";
+    const who = e ? (e.kind === "all" ? "every repository in the project" : e.key)
+                  : (SC ? SC.main : "this repository");
+
+    $("outsub").innerHTML = "What <strong>" + esc(who) + "</strong> has to show for it. " +
+      "Counted, not appraised.";
+
+    if (note) {
+      if (cap === "full") { note.hidden = true; note.innerHTML = ""; }
+      else {
+        note.hidden = false;
+        note.innerHTML =
+          `<strong>Only commits are measured for ${esc(who)}.</strong> Lines, ` +
+          `words and file counts need a working tree, and this page was built ` +
+          `in one repository, not five. The GitHub API will answer with a ` +
+          `commit list and dates; it will not answer with a diff stat that ` +
+          `reconciles &mdash; its contributor statistics disagreed with its own ` +
+          `commit list on a single-branch repository, so nothing derived from ` +
+          `them is published here. Those columns say <em>not measured</em>, ` +
+          `which is not the same as zero.`;
+      }
+    }
+
+    if (cap === "full") {
+      $("outStats").innerHTML = [
+        [n0(o.commit_count), "commits", o.commits.length ? dateRange(o.commits[0].at, o.commits[o.commits.length-1].at) : ""],
+        [n0(o.insertions), "lines added", n0(o.deletions) + " removed"],
+        [n0(o.tracked_files), "files tracked", n0(Math.round(o.bytes/1024)) + " KB"],
+        [n0(o.markdown_words), "words of prose", o.files_by_ext[".md"] + " markdown documents"],
+        [n0(o.files_by_ext[".html"] || 0), "HTML artifacts", "self-contained, no dependencies"],
+        [n0(o.files_by_ext[".py"] || 0), "Python scripts", "every figure regenerable"]
+      ].map(([b,s,e2]) => `<div class="stat"><b>${b}</b><span>${s}</span><em>${e2}</em></div>`).join("");
+      table($("perUnit"), [
+        {key:"m", label:"Unit rate"}, {key:"v", label:"Value", num:true}, {key:"c", label:"Read it with care"}
+      ], [
+        {m:"Cost per commit", v:usd(t.usd/o.commit_count), c:"Commits are not equal sized; several of these are rebuilds of a generated site."},
+        {m:"Cost per 1,000 published words", v:usd(1000*t.usd/o.markdown_words), c:"Counts prose only. Says nothing about whether the prose is correct."},
+        {m:"Cost per line added", v:"$" + (t.usd/o.insertions).toFixed(3), c:"Generated HTML dominates the line count, so this mostly prices a build script's output."},
+        {m:"Requests per turn", v:n1(t.requests/t.turns), c:"The agent issued this many model calls, on average, per thing that was asked for."},
+        {m:"Cost per user request", v:usd(t.usd/t.premium_requests), c:"What one typed instruction set in motion, at list prices."}
+      ]);
+      return;
+    }
+
+    // Commits-only view. Spend IS known per repository, so cost per commit is
+    // a real figure here even though nothing else on the output side is.
+    const commits = e && e.commits != null ? e.commits : null;
+    const usdv = e && e.usd != null ? e.usd : null;
+    const span = e && e.kind !== "all"
+      ? (sibRows.find(s => s.name === e.key) || {})
+      : {};
+    $("outStats").innerHTML = [
+      [commits == null ? "not measured" : n0(commits), "commits",
+       span.first_commit ? dateRange(span.first_commit, span.last_commit)
+                         : (e && e.kind === "all" ? "summed across the project" : "")],
+      [usdv == null ? "not measured" : usd(usdv), "spent",
+       e && e.requests != null ? n0(e.requests) + " requests" : ""],
+      [(commits && usdv) ? usd(usdv/commits) : "not measured", "per commit",
+       "the one unit rate both halves support here"],
+      ["not measured", "lines added", "needs a checkout of " + esc(who)],
+      ["not measured", "words of prose", "needs a checkout of " + esc(who)],
+      ["not measured", "files tracked", "needs a checkout of " + esc(who)]
+    ].map(([b,s,e2]) => `<div class="stat"><b>${b}</b><span>${s}</span><em>${e2}</em></div>`).join("");
+    table($("perUnit"), [
+      {key:"m", label:"Unit rate"}, {key:"v", label:"Value", num:true}, {key:"c", label:"Read it with care"}
+    ], [
+      {m:"Cost per commit", v:(commits && usdv) ? usd(usdv/commits) : "not measured",
+       c:"Commits are not equal sized, and a repository worked on in a single day carries a different commit rhythm from one worked on over weeks."},
+      {m:"Requests per commit", v:(commits && e && e.requests != null) ? n1(e.requests/commits) : "not measured",
+       c:"Model calls issued per commit landed. It prices activity, not progress."},
+      {m:"Cost per 1,000 published words", v:"not measured", c:"Word counts need a working tree. Not available for " + who + "."},
+      {m:"Cost per line added", v:"not measured", c:"Diff stats need a working tree. The API's contributor statistics did not reconcile with its own commit list, so they are not substituted here."}
+    ]);
+  }
+  SCOPE_PAINTERS.push(drawOutputs);
 
   // --- not measured ---------------------------------------------------------
   table($("missTable"), [{key:"a", label:"Not measured"}, {key:"b", label:"Why not, and what it would take"}],
@@ -1295,7 +1520,7 @@ function render() {
     "The token columns in the store disagree with the token details on the " + n0((byInit["compaction"] || {requests:0}).requests) + " compaction rows. This dashboard reads the details, which reconcile exactly to the recorded cost on every row; a dashboard that read the columns would silently under-count. Anyone rebuilding this should check that assertion still holds rather than assume it.",
     "Engaged time is inferred from gaps between requests. It cannot tell a user thinking hard about the last answer from a user who has gone to lunch, and it cannot see any time spent reading the output after the final request of a sitting.",
     "The energy panel is an estimate applied to a workload the source paper does not describe. Its own bracket spans a factor of " + n1(d.energy.spread) + ".",
-    "The output side counts artifacts. It contains no measure of whether any of them is correct, useful, or wanted, and this repository has already withdrawn several published claims that would have counted as output on the day they were written.",
+    "The output side counts artifacts. It contains no measure of whether any of them is correct, useful, or wanted, and this project has already withdrawn several published claims that would have counted as output on the day they were written.",
     "The data is live and this page is part of it. Generating this dashboard cost requests that appear in the next run of the generator. The totals here are a snapshot that was already out of date when it rendered, and a self-measuring instrument cannot record its own last measurement.",
     (d.fleet
       ? "Merging usage across machines relies on files exported from those machines rather than read from them. A machine that was never exported is still missing, and nothing on this page can detect that it existed. The merged figures are exact for the sources listed and a floor for anything beyond them."
@@ -1306,7 +1531,7 @@ function render() {
   ].filter(Boolean).map(s => `<li>${esc(s)}</li>`).join("");
 
   $("foot").innerHTML =
-    `Generated ${esc(d.generated_at)} by <code>${esc(d.generator)}</code> from ` +
+    `Generated ${esc(fmtStamp(d.generated_at))} by <code>${esc(d.generator)}</code> from ` +
     `session <code>${esc(d.session.id)}</code>. Data: <a href="usage-data.json">usage-data.json</a>. ` +
     `Rebuild with <code>python usage/build_usage_data.py</code>; it takes a ` +
     `<code>--cwd</code> or <code>--session</code> and works on any project.` +
@@ -1320,6 +1545,12 @@ function render() {
     `The infrastructure framing is developed in <i>From Tokens to Public Infrastructure: ` +
     `Measuring Intelligence Consumption</i>, prepared for this case study by Ethical Tech CoLab, ` +
     `and summarised in the usage-calc README.`;
+
+  // Every panel has registered its painter by now, so mount the selectors and
+  // paint once. Mounting LAST is deliberate: a select that exists before its
+  // painter does would drop the reader's first change on the floor.
+  mountScopes();
+  repaintScopes();
 }
 
 if (DATA) { render(); }
