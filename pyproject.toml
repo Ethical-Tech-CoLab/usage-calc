@@ -35,4 +35,8 @@ usage-calc = "usagecalc.cli:main"
 packages = ["usagecalc"]
 
 [tool.setuptools.package-data]
-usagecalc = ["templates/*.html"]
+# The tools must ship INSIDE the package. They lived in a top-level tools/
+# directory first, which works in a checkout and silently does not work after
+# `pip install` - `usage-calc export`, the one command that has to run on a
+# machine nobody set up, was the first casualty.
+usagecalc = ["templates/*.html", "tools/*"]

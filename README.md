@@ -112,7 +112,7 @@ $1,484.30, and 4,711 requests became 8,086.
 Fix it in two steps. On the *other* machine:
 
 ```bash
-# tools/export_session.py is standalone - no install, no checkout needed
+# usagecalc/tools/export_session.py is standalone - no install, no checkout needed
 python export_session.py --list
 python export_session.py --all --out .
 ```

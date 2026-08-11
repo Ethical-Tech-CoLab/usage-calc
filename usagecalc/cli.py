@@ -16,8 +16,15 @@ from .build import build as build_payload, inject, render, template_path
 from .project import CONFIG_NAME, DEFAULTS, find_root, load_config
 from .store import StoreError, list_sessions, default_db, open_snapshot
 
-TOOLS = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
-                     "tools")
+TOOLS = os.path.join(os.path.dirname(os.path.abspath(__file__)), "tools")
+
+# Subcommands that are pure pass-throughs to a bundled script. Kept as one
+# mapping so main() and the subparsers cannot drift apart.
+TOOL_CMDS = {
+    "export": "export_session.py",
+    "query": "query_sessions.py",
+    "report": "report_fleet.py",
+}
 
 
 def cmd_init(args):
@@ -141,6 +148,15 @@ def _run_tool(name, rest):
 
 
 def main(argv=None):
+    # The three pass-through subcommands are split off BEFORE argparse sees
+    # them. argparse.REMAINDER looks like it does this and does not: a leading
+    # option (`usage-calc export --list`) is matched against the parser's own
+    # optionals first and reported as unrecognised, so every flag the wrapped
+    # tool documents would have been rejected at the door.
+    argv = list(sys.argv[1:] if argv is None else argv)
+    if argv and argv[0] in TOOL_CMDS:
+        return _run_tool(TOOL_CMDS[argv[0]], argv[1:])
+
     ap = argparse.ArgumentParser(
         prog="usage-calc",
         description="What a Copilot CLI project actually cost, measured not guessed.")
@@ -170,15 +186,15 @@ def main(argv=None):
     p.set_defaults(fn=cmd_build)
 
     p = sub.add_parser("export", help="export this machine's usage for another to merge")
-    p.add_argument("rest", nargs=argparse.REMAINDER)
+    p.add_argument("rest", nargs="*")
     p.set_defaults(fn=cmd_export)
 
     p = sub.add_parser("query", help="what has this machine been doing lately")
-    p.add_argument("rest", nargs=argparse.REMAINDER)
+    p.add_argument("rest", nargs="*")
     p.set_defaults(fn=cmd_query)
 
     p = sub.add_parser("report", help="print merged contributions without building a page")
-    p.add_argument("rest", nargs=argparse.REMAINDER)
+    p.add_argument("rest", nargs="*")
     p.set_defaults(fn=cmd_report)
 
     p = sub.add_parser("verify", help="drive the dashboard in a browser and check it")
