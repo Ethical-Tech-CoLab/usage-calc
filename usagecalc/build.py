@@ -24,13 +24,20 @@ from .todos import summary as todo_summary
 SCHEMA = "copilot-usage/1"
 MARKER = "/*USAGE*/"
 
-# Bumped whenever the packaged template gains a panel that reads a NEW payload
-# key. Splice mode deliberately never touches a project's markup, which is what
+# Bumped whenever the packaged template changes in a way splice mode cannot
+# deliver. Splice deliberately never touches a project's markup, which is what
 # lets a project keep its own styling - but it also means a template upgrade
 # reaches nobody, and a page that cannot render a panel looks exactly like a
 # page that has nothing to show. The version is compared on every build so a
 # stale page says so out loud instead.
-TEMPLATE_VERSION = 3
+#
+# THIS COUNTS PRESENTATION CHANGES TOO, and v4 is one: the page gained a fluid
+# measure and no new payload key. The narrower rule - bump only for a new key -
+# was tempting because a merge is manual work and nobody wants to be nagged
+# into it for a stylesheet. It was rejected because it makes the module the
+# judge of whether a consumer's page is worth improving. The note says what
+# changed; the consumer decides whether to take it.
+TEMPLATE_VERSION = 4
 VERSION_MARK = "usage-calc-template:"
 
 NOT_MEASURED = [

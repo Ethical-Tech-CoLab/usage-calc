@@ -1,5 +1,5 @@
 <!doctype html>
-<!--usage-calc-template:3-->
+<!--usage-calc-template:4-->
 <html lang="en">
 <head>
 <meta charset="utf-8">
@@ -77,7 +77,16 @@ body {
   line-height: 1.6;
 }
 code, .mono, th.num, td.num { font-family: Consolas, "Courier New", Courier, monospace; }
-.wrap { max-width: 1180px; margin: 0 auto; padding: 0 20px 90px; }
+/* One measure for the whole page, so the masthead, the cards and the footer
+   all line up on it and widening the page stays a single number. A 1180px
+   column on a 2560px monitor is a strip down the middle with a third of the
+   screen empty either side. The floor is the old fixed value, so every screen
+   up to about 1440px is pixel-identical to what it was; the ceiling stops a
+   very wide monitor from stretching a row past what the eye can track.
+   This page is cards and tables, not running text - there is no prose column
+   here to grow too long, which is why it can take the full measure. */
+:root { --cp-measure: clamp(1180px, 82vw, 1680px); }
+.wrap { max-width: var(--cp-measure); margin: 0 auto; padding: 0 20px 90px; }
 header.top {
   background: var(--cp-bg-elevated);
   border-bottom: 1px solid var(--cp-border);
